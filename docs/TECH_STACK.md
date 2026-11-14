@@ -2,7 +2,7 @@
 
 **Project:** Loyalty Card Application  
 **Date:** November 11, 2026  
-**Last updated:** November 12, 2026  
+**Last updated:** November 14, 2026  
 **Status:** Proposed technical baseline; implementation and deployment validation pending
 
 ## 1. Purpose and architectural direction
@@ -33,6 +33,9 @@ This document records decisions and required future work. It does not represent 
 | Live user notifications | Transport and coordination service undecided | Authenticated delivery to active frontend clients |
 | External integrations | Server-side integration service layer | Square webhook ingestion and outbound API calls; required future work |
 | MCP tool API | Authenticated MCP endpoint; SDK and transport to be selected | Expose scoped application capabilities to LLM adapters; required future work |
+| Unit and runtime testing | Vitest and Cloudflare Workers Vitest integration | Business logic and Workers runtime tests; configure early |
+| Application integration testing | Cloudflare `createTestHarness()` with Vitest | Exercise production Cloudflare builds and HTTP routes |
+| Browser testing | Playwright | User flows, OAuth consent, CSP/CORS uploads, and SSE behavior |
 
 The inspected starter currently declares SvelteKit 3, Svelte 5, and Node 24+ for development/build tooling. Pin dependency versions and a lockfile during bootstrap; development tooling requirements do not establish Workers runtime compatibility.
 
@@ -155,11 +158,45 @@ Validate CORS and Origin handling for supported HTTP clients, OAuth discovery an
 
 Acceptance: an intended LLM adapter can discover and invoke permitted tools using delegated access, while missing scopes, invalid tokens, and cross-account requests are rejected. Retryable mutations do not create duplicate business effects.
 
-## 11. Implementation milestones
+## 11. Testing strategy — required foundation work
+
+Establish testing infrastructure during bootstrap and expand it with each feature. Infrastructure and integrations are early project goals; keep business scope small with hard-coded loyalty cards rather than postponing the integration features for a later product release.
+
+- **Unit tests:** use Vitest for business rules, validation, authorization decisions, provider event mapping, and idempotency behavior. Use controlled fixtures and deterministic clocks/identifiers where needed.
+- **Workers runtime tests:** configure Cloudflare's current `@cloudflare/vitest-plugin` integration to execute runtime-dependent modules and binding interactions locally through Miniflare/workerd. Pin compatible versions with Vitest and the starter; do not copy older pool configuration without checking compatibility.
+- **Application integration tests:** use Cloudflare's `createTestHarness()` with Vitest to exercise the built Cloudflare application through HTTP routes. Prove the harness works with the selected SvelteKit adapter output during bootstrap. Cover authentication, OAuth token validation, Square webhooks, MCP calls, and the services/bindings each route uses.
+- **Browser tests:** use Playwright against the locally built Workers application for sign-in, consent, customer workflows, real browser CORS/CSP enforcement, uploads, and SSE disconnect/reconnect behavior. A Node development server alone does not validate the production runtime.
+- **Staging smoke tests:** run a small suite against an isolated deployed environment to verify actual Turso/R2 access, domains, secrets, streaming, and Square sandbox integration. Local emulation does not establish full hosted-service parity.
+
+Simulate external provider responses in routine tests, including rate limits, timeouts, malformed responses, and retries. Keep live-provider checks separate and use sandbox credentials and disposable data. Isolate test databases, storage, queue state, and account fixtures; never use production resources for automated mutation tests.
+
+Provide documented commands for unit/runtime tests, built-application integration tests, browser tests, type checking, linting, and production builds. Run appropriate automated checks in CI for changes, with staging checks requiring their own environment configuration. Use meaningful assertions on business effects and account isolation, rather than relying solely on response codes or coverage percentages.
+
+Acceptance: CI can build the Cloudflare target and run repeatable local tests without production credentials; integration and browser tests detect runtime, authorization, CORS/CSP, and retry defects.
+
+## 12. API idempotency and retry safety — mandatory design requirement
+
+Idempotency is essential for application APIs, Square integrations, background consumers, and mutating MCP tools. A retry after a timeout must not add another stamp, redeem the same reward twice, or duplicate an external write. Apply the same guarantees through shared application services regardless of entry point.
+
+Define an idempotency contract for each mutation that can duplicate business effects:
+
+- Require or derive a stable operation key and document its scope, retry window, retention, and expiry behavior. Clients must reuse the key when retrying the same logical action and use a new key for a new action. A new HTTP/MCP request identifier alone is not a stable business operation key.
+- Scope keys to the account, operation, and authorized caller/integration as appropriate. Authenticate and authorize every attempt, including replays; never return another account's saved result.
+- Record a canonical request fingerprint. Reject the same key with a different payload rather than silently treating it as the original action.
+- Enforce uniqueness and concurrency control in durable storage, not process-local memory. Atomically coordinate the receipt and local business mutation so concurrent requests and Worker restarts cannot duplicate effects. Define how in-progress operations and failed attempts are resumed or reported.
+- Return a documented equivalent result for completed duplicates. Store only the minimal operational receipt/result data needed, with a bounded retention policy; this is not conversation or analytics history.
+- Use provider event IDs for webhook deduplication and propagate stable idempotency keys for outbound writes where supported. For external calls, design reconciliation and recovery for an unknown outcome rather than claiming a database transaction covers the remote side effect.
+- Enforce business invariants independently of request keys, such as preventing the same reward entitlement from being redeemed twice using different keys. Specify event publication and notification retry behavior separately from the core mutation.
+
+Required tests include sequential duplicates, simultaneous duplicates, key/payload conflicts, account isolation, response loss after commit followed by retry, interruption/recovery, retention expiry, and external timeout with uncertain provider outcome. Verify one intended business effect and consistent results, not just successful responses.
+
+Acceptance: retrying the same logical action across API, webhook, or MCP entry points cannot duplicate its business effect within the documented contract, and unresolved remote outcomes are visible and recoverable.
+
+## 13. Implementation milestones
 
 | Milestone | Deliverable |
 | --- | --- |
-| 1. Bootstrap and edge proof | Pin Omakase revision; validate build, SSR, database, and Better Auth sessions under Workers |
+| 1. Bootstrap and edge proof | Pin Omakase revision; validate build, SSR, database, and Better Auth sessions under Workers; establish Vitest/runtime, integration, Playwright, and CI foundations; add the local Compose workflow below |
 | 2. Storage portability | Configurable S3 integration, LocalStack initialization, public/private URL handling, CORS browser verification |
 | 3. Browser security | CSP report-only rollout followed by enforcement and complete browser flow verification |
 | 4. Integration authentication | Auth Code + PKCE, consent, token verification, refresh/revocation, and scoped machine clients |
@@ -168,8 +205,25 @@ Acceptance: an intended LLM adapter can discover and invoke permitted tools usin
 | 7. Integration service layer | Square webhook verification, account mapping, durable processing, deduplication, and server-side API access |
 | 8. MCP tool API | Select SDK/transport; implement scoped tools over shared services and verify target LLM adapter interoperability |
 
-## 12. Open decisions
+### Milestone 1: Starter architecture and Workers compatibility
 
+- **Preserve the starter guide:** Omakase includes `docs/architecture.md`, an opinionated guide to its project structure and how to extend the application. Keep it when importing the starter, review it against this tech stack, and adapt any guidance that conflicts with Super Stamps' decisions. Preserve the reference from the root `AGENTS.md` when merging any upstream agent instructions.
+- **Target Workers at runtime:** Production code must not assume a full Node.js runtime. Prefer Web APIs and Workers bindings. Node is fine for local tooling, builds, and appropriate test suites; any Node API used in deployed code must be explicitly supported and verified with the project's Workers compatibility settings.
+- **Audit inherited code:** Review server code and transitive dependencies for unsupported Node APIs, native modules, and filesystem or process assumptions. Fix deployment blockers during bootstrap. If broader cleanup is needed, create follow-up epics for the affected areas, with built-Worker tests as acceptance criteria.
+
+### Milestone 1: Local developer workflow
+
+- **Docker Compose:** Provide a development Compose file that runs the SvelteKit/Vite dev server with one documented startup command. Mount or sync source files, keep container dependencies separate from host dependencies, and publish the web port so the browser can receive live updates. Add LocalStack as an optional profile for S3 work. Keep local database data in a named volume and document how to reset it. Compose is for local development; Workers remains the production target.
+- **Fast edit loop:** Keep the host-native dev command available. Verify that editing a Svelte component updates the browser and editing a server route changes the next request without manual restarts, including when running under Compose. Document any watcher or hot reload networking settings needed.
+- **Reproducible setup:** Pin the Node and package manager versions, commit the lockfile, and provide a sample environment file with safe local defaults and placeholders for secrets. Document migration, seed, and reset commands. Seed one local operator and a few synthetic customer cards for repeatable development and demos.
+- **Separate edge check:** Document a command to build the Cloudflare target and run it locally with Wrangler. Use it to check Workers-specific behavior and bindings independently of the day-to-day Vite loop. Keep the same test and check commands available locally and in CI.
+- **Useful diagnostics:** Provide readable local logs with request IDs where useful. Use webhook fixtures for everyday tests and document an opt-in HTTPS tunnel for Square sandbox callbacks when the integration is introduced.
+
+Acceptance: a fresh checkout can start the app with Compose, seed sample data, and observe frontend and backend edits without rebuilding the image. A separate command verifies the built Worker locally.
+
+## 14. Open decisions
+
+- Idempotency key scope, receipt storage, retention/retry window, and recovery strategy for external side effects.
 - Exact LLM adapter/MCP clients and their OAuth compatibility requirements.
 - Analytics provider, content collection policy, event retention, and acceptable event loss/duplication.
 - SSE versus WebSockets and the coordination service for notifications.
@@ -180,9 +234,9 @@ Acceptance: an intended LLM adapter can discover and invoke permitted tools usin
 - Integration queue/store selection, operational receipt retention, and accepted-work delivery guarantees.
 - Initial MCP tool catalog, target clients, SDK/transport, and approval rules for sensitive mutations.
 
-## 13. Source references
+## 15. Source references
 
-Source and documentation reviewed November 11, 2026. Repository links track upstream branches; record a commit when bootstrapping the application.
+Initial source and documentation review: November 11, 2026. Workers testing guidance reviewed November 12, 2026. Repository links track upstream branches; record a commit when bootstrapping the application.
 
 - [Omakase repository and license](https://github.com/n00ki/sveltekit-omakase)
 - [Omakase dependencies](https://github.com/n00ki/sveltekit-omakase/blob/main/package.json), [deployment configuration](https://github.com/n00ki/sveltekit-omakase/blob/main/vite.config.ts), and [database connection](https://github.com/n00ki/sveltekit-omakase/blob/main/src/lib/server/database.ts)
@@ -193,3 +247,5 @@ Source and documentation reviewed November 11, 2026. Repository links track upst
 - [Cloudflare R2 S3 compatibility](https://developers.cloudflare.com/r2/api/s3/api/)
 - [LocalStack S3](https://docs.localstack.cloud/aws/services/s3/) and [installation requirements](https://docs.localstack.cloud/aws/getting-started/installation/)
 - [Workers Streams API](https://developers.cloudflare.com/workers/runtime-apis/streams/), [Cloudflare Queues](https://developers.cloudflare.com/queues/), and [Durable Objects WebSockets](https://developers.cloudflare.com/durable-objects/best-practices/websockets/)
+
+- [Cloudflare testing guidance](https://developers.cloudflare.com/workers/testing/) and [Workers Vitest integration](https://developers.cloudflare.com/workers/testing/vitest-integration/)
