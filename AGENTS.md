@@ -4,7 +4,6 @@
 - Target Cloudflare Workers for production code. Prefer Web APIs and Workers bindings; do not assume a full Node.js runtime. Node is allowed for local tooling and builds. Verify any required Node compatibility in the Workers runtime.
 - Use Docker for local development and verification to keep project dependencies in containers. Follow the [Docker verification workflow](README.md#verify-in-docker) for starter and dependency changes. The [tech stack](docs/TECH_STACK.md) describes the planned Docker Compose workflow for the Vite dev server.
 
-
 ## Personally identifiable information (PII)
 
 - Keep PII and secrets out of logs, traces, error reports, and analytics. Use allowlisted diagnostic fields such as request IDs and error codes. Avoid logging raw request bodies, headers, query strings, or database records.

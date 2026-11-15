@@ -15,27 +15,27 @@ This document records decisions and required future work. It does not represent 
 
 ## 2. Selected stack
 
-| Layer | Selection | Responsibility / status |
-| --- | --- | --- |
-| Starter | SvelteKit Omakase, MIT licensed | Application foundation; review and pin a source revision before implementation |
-| Language and framework | TypeScript, Svelte, SvelteKit | UI, server rendering, backend endpoints, and server-side business logic |
-| UI | Tailwind CSS and shadcn-svelte | Styling and reusable components inherited from Omakase |
-| Production runtime | Cloudflare Workers | Edge execution; Cloudflare adapter and runtime compatibility validation required |
-| Application database | Turso Cloud | Operational application data and authentication records |
-| Database access | Drizzle ORM | Typed schema, queries, and controlled migrations; validate the Turso driver under Workers |
-| Authentication | Better Auth, hosted within the application | Users, sessions, password login, and configured social providers; no separate Better Auth cloud account |
-| Delegated / machine access | Better Auth OAuth Provider plugin | Authorization Code + PKCE and client credentials; additional implementation required |
-| Production object storage | Cloudflare R2 through the S3 API | Uploaded files; keep application storage configuration portable |
-| Local object storage | LocalStack S3 | Local development and integration testing; configuration required |
-| Local database | SQLite/libSQL compatible with the application schema | Local development; not persistent production storage inside Workers |
-| Transactional email | Resend, inherited from the starter | Confirm provider and local email testing before implementing account recovery flows |
-| Analytics event delivery | External event pipeline; provider undecided | Backend event publication and analytics/history storage outside the application database |
-| Live user notifications | Transport and coordination service undecided | Authenticated delivery to active frontend clients |
-| External integrations | Server-side integration service layer | Square webhook ingestion and outbound API calls; required future work |
-| MCP tool API | Authenticated MCP endpoint; SDK and transport to be selected | Expose scoped application capabilities to LLM adapters; required future work |
-| Unit and runtime testing | Vitest and Cloudflare Workers Vitest integration | Business logic and Workers runtime tests; configure early |
-| Application integration testing | Cloudflare `createTestHarness()` with Vitest | Exercise production Cloudflare builds and HTTP routes |
-| Browser testing | Playwright | User flows, OAuth consent, CSP/CORS uploads, and SSE behavior |
+| Layer                           | Selection                                                    | Responsibility / status                                                                                 |
+| ------------------------------- | ------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------- |
+| Starter                         | SvelteKit Omakase, MIT licensed                              | Application foundation; review and pin a source revision before implementation                          |
+| Language and framework          | TypeScript, Svelte, SvelteKit                                | UI, server rendering, backend endpoints, and server-side business logic                                 |
+| UI                              | Tailwind CSS and shadcn-svelte                               | Styling and reusable components inherited from Omakase                                                  |
+| Production runtime              | Cloudflare Workers                                           | Edge execution; Cloudflare adapter and runtime compatibility validation required                        |
+| Application database            | Turso Cloud                                                  | Operational application data and authentication records                                                 |
+| Database access                 | Drizzle ORM                                                  | Typed schema, queries, and controlled migrations; validate the Turso driver under Workers               |
+| Authentication                  | Better Auth, hosted within the application                   | Users, sessions, password login, and configured social providers; no separate Better Auth cloud account |
+| Delegated / machine access      | Better Auth OAuth Provider plugin                            | Authorization Code + PKCE and client credentials; additional implementation required                    |
+| Production object storage       | Cloudflare R2 through the S3 API                             | Uploaded files; keep application storage configuration portable                                         |
+| Local object storage            | LocalStack S3                                                | Local development and integration testing; configuration required                                       |
+| Local database                  | SQLite/libSQL compatible with the application schema         | Local development; not persistent production storage inside Workers                                     |
+| Transactional email             | Resend, inherited from the starter                           | Confirm provider and local email testing before implementing account recovery flows                     |
+| Analytics event delivery        | External event pipeline; provider undecided                  | Backend event publication and analytics/history storage outside the application database                |
+| Live user notifications         | Transport and coordination service undecided                 | Authenticated delivery to active frontend clients                                                       |
+| External integrations           | Server-side integration service layer                        | Square webhook ingestion and outbound API calls; required future work                                   |
+| MCP tool API                    | Authenticated MCP endpoint; SDK and transport to be selected | Expose scoped application capabilities to LLM adapters; required future work                            |
+| Unit and runtime testing        | Vitest and Cloudflare Workers Vitest integration             | Business logic and Workers runtime tests; configure early                                               |
+| Application integration testing | Cloudflare `createTestHarness()` with Vitest                 | Exercise production Cloudflare builds and HTTP routes                                                   |
+| Browser testing                 | Playwright                                                   | User flows, OAuth consent, CSP/CORS uploads, and SSE behavior                                           |
 
 The inspected starter currently declares SvelteKit 3, Svelte 5, and Node 24+ for development/build tooling. Pin dependency versions and a lockfile during bootstrap; development tooling requirements do not establish Workers runtime compatibility.
 
@@ -194,16 +194,16 @@ Acceptance: retrying the same logical action across API, webhook, or MCP entry p
 
 ## 13. Implementation milestones
 
-| Milestone | Deliverable |
-| --- | --- |
-| 1. Bootstrap and edge proof | Pin Omakase revision; validate build, SSR, database, and Better Auth sessions under Workers; establish Vitest/runtime, integration, Playwright, and CI foundations; add the local Compose workflow below |
-| 2. Storage portability | Configurable S3 integration, LocalStack initialization, public/private URL handling, CORS browser verification |
-| 3. Browser security | CSP report-only rollout followed by enforcement and complete browser flow verification |
-| 4. Integration authentication | Auth Code + PKCE, consent, token verification, refresh/revocation, and scoped machine clients |
-| 5. Analytics pipeline | Select sink/transport; document retention and delivery guarantees; verify failure behavior |
-| 6. Live notifications | Select transport/coordination; implement authenticated routing, reconnect behavior, and cross-instance tests |
-| 7. Integration service layer | Square webhook verification, account mapping, durable processing, deduplication, and server-side API access |
-| 8. MCP tool API | Select SDK/transport; implement scoped tools over shared services and verify target LLM adapter interoperability |
+| Milestone                     | Deliverable                                                                                                                                                                                              |
+| ----------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1. Bootstrap and edge proof   | Pin Omakase revision; validate build, SSR, database, and Better Auth sessions under Workers; establish Vitest/runtime, integration, Playwright, and CI foundations; add the local Compose workflow below |
+| 2. Storage portability        | Configurable S3 integration, LocalStack initialization, public/private URL handling, CORS browser verification                                                                                           |
+| 3. Browser security           | CSP report-only rollout followed by enforcement and complete browser flow verification                                                                                                                   |
+| 4. Integration authentication | Auth Code + PKCE, consent, token verification, refresh/revocation, and scoped machine clients                                                                                                            |
+| 5. Analytics pipeline         | Select sink/transport; document retention and delivery guarantees; verify failure behavior                                                                                                               |
+| 6. Live notifications         | Select transport/coordination; implement authenticated routing, reconnect behavior, and cross-instance tests                                                                                             |
+| 7. Integration service layer  | Square webhook verification, account mapping, durable processing, deduplication, and server-side API access                                                                                              |
+| 8. MCP tool API               | Select SDK/transport; implement scoped tools over shared services and verify target LLM adapter interoperability                                                                                         |
 
 ### Milestone 1: Starter architecture and Workers compatibility
 
