@@ -1,0 +1,31 @@
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "superstamps-local",
+  "main": ".svelte-kit/cloudflare/_worker.js",
+  "compatibility_date": "2026-11-12",
+  "compatibility_flags": ["nodejs_compat"],
+  "assets": {
+    "binding": "ASSETS",
+    "directory": ".svelte-kit/cloudflare"
+  },
+  "workers_dev": false,
+  "preview_urls": false,
+  "keep_vars": true,
+  "env": {
+    "preview": {
+      "name": "superstamps-preview",
+      "workers_dev": true,
+      "preview_urls": true
+    },
+    "staging": {
+      "name": "superstamps-staging",
+      "workers_dev": true,
+      "preview_urls": false
+    },
+    "production": {
+      "name": "superstamps",
+      "workers_dev": false,
+      "preview_urls": false
+    }
+  }
+}

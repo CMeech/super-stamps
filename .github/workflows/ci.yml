@@ -64,10 +64,8 @@ jobs:
       - name: Type check
         run: pnpm check
 
-      - name: Build starter
-        env:
-          BETTER_AUTH_SECRET: superstamps-local-build-verification-only
-        run: pnpm build
-
       - name: Run unit tests
-        run: pnpm test:unit
+        run: pnpm test:unit --run
+
+      - name: Build and smoke-test the local Cloudflare Worker
+        run: bash scripts/smoke-worker.sh
