@@ -1,0 +1,5 @@
+import { requireGuest } from '#lib/server/auth.ts';
+
+export function load() {
+  requireGuest();
+}

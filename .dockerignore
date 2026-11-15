@@ -1,0 +1,13 @@
+.git
+node_modules
+.pnpm-store
+.svelte-kit
+build
+dist
+package
+.env
+.env.*
+!.env.example
+*.db
+*.db-*
+test-results
