@@ -15,7 +15,9 @@ services:
     build: .
     depends_on:
       - database
-    command: ['node', 'scripts/smoke-worker.mjs']
+    command: ['pnpm', 'test:worker']
+    environment:
+      WRANGLER_SEND_METRICS: 'false'
     volumes:
       - diagnostics:/diagnostics:ro
 

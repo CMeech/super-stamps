@@ -30,7 +30,9 @@ docker run --rm -p 127.0.0.1:8787:8787 superstamps-starter sh -ec '
 
 Open [the sign-in page](http://127.0.0.1:8787/login) to verify SSR. Sign-in, email, and file uploads require their own service configuration. Worker builds use libSQL over HTTP. The Vite dev server and Drizzle tooling can still use a local SQLite file.
 
-Run `bash scripts/smoke-worker.sh` to verify SSR, database-backed sign-in and sign-out, private-route access, and diagnostic redaction. The command starts a disposable libSQL service with Docker Compose and uses synthetic credentials.
+Run `bash scripts/smoke-worker.sh` locally or in CI to run the Vitest Worker suite. Docker Compose starts a disposable libSQL database, and Wrangler’s `createTestHarness()` runs the built Worker with synthetic credentials. The suite checks the `ASSETS` binding, SSR, database-backed sign-in and sign-out, private-route access, and diagnostic redaction.
+
+Run `docker run --rm --env-file .env.example superstamps-starter pnpm test:unit --run` for the Node unit suite.
 
 ## Worker environments
 

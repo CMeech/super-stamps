@@ -1,13 +1,15 @@
+import type { TestHarness } from 'wrangler';
+
 import { spawn } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
-import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { readFile } from 'node:fs/promises';
 import { setTimeout as delay } from 'node:timers/promises';
 import { parseEnv } from 'node:util';
 import { createClient } from '@libsql/client/http';
 import { drizzle } from 'drizzle-orm/libsql';
 import { migrate } from 'drizzle-orm/libsql/migrator';
+import { afterAll, beforeAll, expect, it } from 'vitest';
+import { createTestHarness } from 'wrangler';
 
 const base = 'http://127.0.0.1:8787';
 // Disposable sqld lets the built Worker use the same libSQL HTTP driver it uses with Turso.
@@ -30,20 +32,17 @@ const credentialMarkers = new Set([
   queryMarker,
   headerMarker
 ]);
-const cookies = new Map();
+const cookies = new Map<string, string>();
 const database = createClient({ url: databaseUrl, authToken: databaseToken });
-const temp = await mkdtemp(join(tmpdir(), 'superstamps-smoke-'));
-let worker;
-let workerOutput = '';
+let harness: TestHarness | undefined;
 let buildOutput = '';
-let failed = false;
 let stage = 'prepare the isolated environment';
 
-function check(condition) {
-  if (!condition) throw new Error('Smoke assertion failed');
+function check(condition: unknown): asserts condition {
+  expect(Boolean(condition), `Worker check failed during the step to ${stage}.`).toBe(true);
 }
 
-async function waitFor(probe) {
+async function waitFor(probe: () => Promise<unknown>) {
   for (let attempt = 0; attempt < 45; attempt++) {
     try {
       const result = await probe();
@@ -56,7 +55,7 @@ async function waitFor(probe) {
   throw new Error('Smoke service did not become ready');
 }
 
-function run(args, env, capture) {
+function run(args: string[], env: NodeJS.ProcessEnv, capture: (chunk: string) => void) {
   const child = spawn('pnpm', args, { env, stdio: ['ignore', 'pipe', 'pipe'] });
   child.stdout.setEncoding('utf8').on('data', capture);
   child.stderr.setEncoding('utf8').on('data', capture);
@@ -71,11 +70,17 @@ function cookieHeader() {
   return Array.from(cookies, ([name, value]) => `${name}=${value}`).join('; ');
 }
 
-async function request(path, options = {}, cookie = cookieHeader(), storeCookies = true) {
+async function request(
+  path: string,
+  options: { method?: string; headers?: Record<string, string>; body?: string | URLSearchParams } = {},
+  cookie = cookieHeader(),
+  storeCookies = true
+) {
+  check(harness);
   const headers = new Headers(options.headers);
   headers.set('Origin', base);
   if (cookie) headers.set('Cookie', cookie);
-  const response = await fetch(new URL(path, base), {
+  const response = await harness.fetch(new URL(path, base), {
     ...options,
     headers,
     redirect: 'manual',
@@ -99,7 +104,11 @@ async function request(path, options = {}, cookie = cookieHeader(), storeCookies
   return response;
 }
 
-function authRequest(path, body, headers) {
+function authRequest(
+  path: string,
+  body: typeof account | Pick<typeof account, 'email' | 'password'>,
+  headers?: Record<string, string>
+) {
   return request(path, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', ...headers },
@@ -107,12 +116,12 @@ function authRequest(path, body, headers) {
   });
 }
 
-function checkPrivateRedirect(response) {
+function checkPrivateRedirect(response: Awaited<ReturnType<typeof request>>) {
   const destination = response.headers.get('location');
   check(response.status === 303 && destination === '/login');
 }
 
-try {
+beforeAll(async () => {
   const exampleEnv = await readFile('.env.example', 'utf8');
   const env = {
     ...parseEnv(exampleEnv),
@@ -122,47 +131,36 @@ try {
     DATABASE_URL: databaseUrl,
     DATABASE_AUTH_TOKEN: databaseToken
   };
-  const envFile = join(temp, 'worker.env');
-  const envContents = Object.entries(env)
-    .map(([key, value]) => `${key}=${value}\n`)
-    .join('');
-  await writeFile(envFile, envContents, { mode: 0o600 });
-  const processEnv = { ...process.env, ...env, WRANGLER_SEND_METRICS: 'false' };
-
   stage = 'apply Drizzle migrations to local libSQL';
   await waitFor(() => database.execute('select 1'));
   const migrationDb = drizzle(database);
   await migrate(migrationDb, { migrationsFolder: 'src/lib/db/migrations' });
 
   stage = 'build the Cloudflare Worker';
-  const build = run(['build'], processEnv, (chunk) => {
+  const build = run(['build'], { ...process.env, ...env }, (chunk) => {
     buildOutput += chunk;
   });
   const buildExitCode = await build.done;
   check(buildExitCode === 0);
 
+  stage = 'start the built Worker';
+  harness = createTestHarness({
+    workers: [{ configPath: './wrangler.jsonc', secrets: env }]
+  });
+  await harness.listen();
+}, 120_000);
+
+it('serves a known asset through the Worker ASSETS binding', async () => {
+  check(harness);
+  const { ASSETS } = await harness.getWorker<{ ASSETS: { fetch: typeof fetch } }>().getEnv();
+  const response = await ASSETS.fetch(new URL('/robots.txt', base).href);
+  expect(response.status).toBe(200);
+  expect(await response.text()).toContain('User-agent: *');
+});
+
+it('renders sign-in HTML and persists and revokes database-backed sessions', async () => {
   stage = 'verify server-rendered sign-in HTML';
-  worker = run(
-    [
-      'exec',
-      'wrangler',
-      'dev',
-      '--local',
-      '--env-file',
-      envFile,
-      '--ip',
-      '127.0.0.1',
-      '--port',
-      '8787',
-      '--log-level',
-      'warn'
-    ],
-    processEnv,
-    (chunk) => {
-      workerOutput += chunk;
-    }
-  );
-  const loginPage = await waitFor(() => request('/login'));
+  const loginPage = await request('/login');
   check(loginPage.status === 200);
   const loginHtml = await loginPage.text();
   const hasSignInForm = /<form\b/.test(loginHtml) && loginHtml.includes('Sign in');
@@ -171,7 +169,7 @@ try {
   stage = 'seed the synthetic account through Better Auth';
   const signup = await authRequest('/api/auth/sign-up/email', account);
   check(signup.ok);
-  const seedSession = await signup.json();
+  const seedSession = (await signup.json()) as { token?: unknown };
   check(typeof seedSession.token === 'string' && seedSession.token.length > 0);
   credentialMarkers.add(seedSession.token);
   const logout = () =>
@@ -224,47 +222,29 @@ try {
 
   const sessionsAfterSignOut = await database.execute('select token from session');
   check(sessionsAfterSignOut.rows.length === 0);
-  console.log('Worker passed SSR, Drizzle, session persistence, sign-out, and private-route checks.');
-} catch {
-  console.error(`Worker smoke failed during the step to ${stage}.`);
-  failed = true;
-} finally {
-  if (worker) {
-    worker.child.kill();
-    await worker.done;
-  }
+}, 30_000);
 
+afterAll(async () => {
   try {
+    const workerOutput = JSON.stringify(harness?.getLogs() ?? []);
     const libsqlOutput = await readFile('/diagnostics/libsql.log', 'utf8');
     const diagnosticStreams = [
       ['build', buildOutput],
-      ['Wrangler/workerd and application', workerOutput],
+      ['workerd and application', workerOutput],
       ['local libSQL', libsqlOutput]
     ];
+
     for (const [stream, output] of diagnosticStreams) {
       const containsSyntheticMarker = [...credentialMarkers].some((marker) => {
         const encodedMarker = encodeURIComponent(marker);
         return output.includes(marker) || output.includes(encodedMarker);
       });
-      if (containsSyntheticMarker) {
-        console.error(`Synthetic PII or credential marker found in ${stream} output.`);
-        failed = true;
-      }
+      expect(containsSyntheticMarker, `Synthetic PII or credential marker in ${stream} output`).toBe(false);
     }
-    if (!failed) {
-      check(libsqlOutput.trim().length > 0);
-      check(workerOutput.includes('Invalid password'));
-      console.log(
-        'Scanned build, Wrangler/workerd with application logs, and local libSQL output for synthetic markers.'
-      );
-      console.log('Verified that the rejected sign-in emitted Better Auth’s invalid-password warning.');
-    }
-  } catch {
-    console.error('Could not verify the expected diagnostic or read the captured outputs.');
-    failed = true;
+    expect(libsqlOutput.trim().length > 0, 'Expected local libSQL diagnostics').toBe(true);
+    expect(workerOutput.includes('Invalid password'), 'Expected the invalid-password warning').toBe(true);
   } finally {
     database.close();
-    await rm(temp, { recursive: true, force: true });
+    await harness?.close();
   }
-}
-process.exitCode = failed ? 1 : 0;
+});
