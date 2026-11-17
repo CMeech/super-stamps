@@ -3,7 +3,7 @@ import { form, getRequestEvent } from '$app/server';
 import { error, invalid } from '@sveltejs/kit';
 import { APIError as BetterAuthAPIError } from 'better-auth/api';
 
-import { auth, requireAuth } from '#lib/server/auth.ts';
+import { getAuth, requireAuth } from '#lib/server/auth.ts';
 import { flash, flashAndRedirect } from '#lib/server/flash.ts';
 import { updateCredentialPassword } from '#lib/server/password.ts';
 import { markChallengeCompleted, requirePasswordUpdate, requireTwoFactor } from '#lib/server/security.ts';
@@ -23,7 +23,7 @@ export const updateUser = form(updateUserSchema, async ({ image, name }) => {
   }
 
   try {
-    await auth.api.updateUser({
+    await getAuth().api.updateUser({
       body: {
         ...(image && { image }),
         ...(name && { name })
@@ -47,7 +47,7 @@ export const updateUserPassword = form(updateUserPasswordSchema, async ({ _passw
     } else {
       const { request } = getRequestEvent();
 
-      await auth.api.setPassword({
+      await getAuth().api.setPassword({
         body: {
           newPassword: _password
         },
@@ -74,7 +74,7 @@ export const deleteUser = form(deleteUserSchema, async (_data, issue) => {
   const { request } = getRequestEvent();
 
   try {
-    await auth.api.deleteUser({
+    await getAuth().api.deleteUser({
       body: {},
       headers: request.headers
     });

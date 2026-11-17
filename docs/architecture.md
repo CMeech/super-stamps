@@ -8,7 +8,7 @@ SuperStamps uses the SvelteKit Omakase starter as the foundation for digital loy
 | ------------ | --------------------------------------------------- |
 | **Backend**  | SvelteKit, TypeScript, Better Auth, Drizzle ORM     |
 | **Frontend** | Svelte 5, TypeScript, TailwindCSS v4, shadcn-svelte |
-| **Database** | Cloudflare D1 (cutover pending)                     |
+| **Database** | Cloudflare D1                                       |
 | **Forms**    | Remote Functions, Valibot                           |
 | **Email**    | Resend, Better Svelte Email                         |
 | **Storage**  | Cloudflare R2                                       |
@@ -35,7 +35,7 @@ src/
 │   ├── remote/                # Remote functions (*.remote.ts)
 │   ├── server/                # Server-only code
 │   │   ├── auth.ts            # Better Auth config + helpers
-│   │   ├── database.ts        # Drizzle connection (default export)
+│   │   ├── database.ts        # Request-scoped Drizzle connection
 │   │   ├── flash.ts           # Flash message helpers
 │   │   ├── rate-limit.ts      # Rate limit helper
 │   │   ├── security.ts        # Security and access guards
@@ -87,7 +87,7 @@ src/
 - Security and access guards live in `src/lib/server/security.ts`. Two-factor protected sessions use Better Auth verification plus `Session.twoFactorCompletedAt`.
 - Sensitive routes and remote forms use `requireChallenge('/return-path')` before the operation. It prompts for a 2FA or recovery code when enabled, password for password-backed accounts, or a fresh sign-in for OAuth-only accounts, and `/auth/challenge` returns users there after confirmation.
 - Forms can call `await checkRateLimit(issue.field)` and use `useRemoteForm`, `.preflight(schema)`, and `useFormValidation` for client-side usage.
-- Import models from `#models` and the database connection from the default export in `#lib/server/database.ts`.
+- Import models from `#models` and access the request database through the default export in `#lib/server/database.ts`.
 - Use explicit TypeScript types at meaningful boundaries, such as shared APIs, DB/query contracts, and non-obvious helpers. Rely on inference for local values, route `load` functions, and route `$props()` data/children props.
 - Keep TypeScript readable: prefer plain object types and named unions over generics, mapped types, conditional types, and assertions unless they clearly improve the caller API.
 
@@ -124,7 +124,7 @@ import { form } from '$app/server';
 
 import { error, invalid } from '@sveltejs/kit';
 
-import { requireGuest } from '#lib/server/auth.ts';
+import { getAuth, requireGuest } from '#lib/server/auth.ts';
 import { flashAndRedirect } from '#lib/server/flash.ts';
 import { checkRateLimit } from '#lib/server/rate-limit.ts';
 import { loginSchema } from '#lib/validations/auth.ts';
@@ -136,7 +136,7 @@ export const login = form(loginSchema, async ({ email, _password }, issue) => {
   await checkRateLimit(issue.email);
 
   try {
-    await auth.api.signInEmail({ body: { email, password: _password } });
+    await getAuth().api.signInEmail({ body: { email, password: _password } });
   } catch (err) {
     if (err.body?.code === 'INVALID_EMAIL_OR_PASSWORD') {
       invalid(issue.email(m.auth.login.error));
@@ -266,11 +266,11 @@ export const loginSchema = v.object({
 
 ## Database
 
-Cloudflare D1 is the selected database for operational and authentication data. The D1 migration will use Drizzle with the request-scoped Workers binding and keep Cloudflare-specific initialization in the server database layer. Apply checked-in SQL migrations to local D1 before verification and to the target D1 database during deployment. See the [deployment guidance](TECH_STACK.md#4-cloudflare-edge-deployment--required-future-work).
+Cloudflare D1 is the selected database for operational and authentication data. Drizzle and Better Auth use the request-scoped Workers binding. The server database layer handles D1 initialization. Apply checked-in SQL migrations to local D1 before verification and to the target D1 database during deployment. See the [deployment guidance](TECH_STACK.md#4-cloudflare-edge-deployment--required-future-work).
 
 ## Commands
 
-Use the [Docker quick start](../README.md#verify-in-docker) for a frozen dependency install, type checking, and the starter build. Inside the container, the following commands are available. The database commands below serve the current starter until the D1 cutover.
+Use the [Docker quick start](../README.md#verify-in-docker) for a frozen dependency install, type checking, and the Worker build.
 
 ```bash
 pnpm dev          # Dev server
@@ -278,8 +278,9 @@ pnpm check        # Svelte and TypeScript checks
 pnpm build        # Production build
 pnpm fix          # Format & lint fix
 
-pnpm db:push      # Push schema
-pnpm db:studio    # Drizzle Studio
+pnpm db:generate  # Generate SQL migrations
+pnpm db:migrate   # Apply migrations to local D1
+pnpm db:clear     # Clear authentication data in local D1
 
 pnpm test:unit    # Unit tests
 pnpm test:e2e     # E2E tests

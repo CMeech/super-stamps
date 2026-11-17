@@ -4,7 +4,7 @@ import { error, invalid, redirect } from '@sveltejs/kit';
 import { APIError as BetterAuthAPIError } from 'better-auth/api';
 
 import { EMAILS, sendEmail } from '#lib/mail/mailer.ts';
-import { auth, requireGuest } from '#lib/server/auth.ts';
+import { getAuth, requireGuest } from '#lib/server/auth.ts';
 import { flashAndRedirect } from '#lib/server/flash.ts';
 import { checkRateLimit } from '#lib/server/rate-limit.ts';
 import { getSafeChallengeNext } from '#lib/server/security.ts';
@@ -22,10 +22,11 @@ export const login = form(loginSchema, async ({ email, _password, next }, issue)
   await checkRateLimit(issue.email);
 
   const redirectTo = getSafeChallengeNext(next, '/dashboard');
-  let result: Awaited<ReturnType<typeof auth.api.signInEmail>>;
+  const { api } = getAuth();
+  let result: Awaited<ReturnType<typeof api.signInEmail>>;
 
   try {
-    result = await auth.api.signInEmail({
+    result = await api.signInEmail({
       body: {
         email,
         password: _password
@@ -52,7 +53,7 @@ export const createUser = form(createUserSchema, async ({ email, name, _password
   await checkRateLimit(issue.email);
 
   try {
-    await auth.api.signUpEmail({
+    await getAuth().api.signUpEmail({
       body: {
         email,
         name,
@@ -85,7 +86,7 @@ export const requestPasswordReset = form(requestPasswordResetSchema, async ({ em
   await checkRateLimit(issue.email);
 
   try {
-    await auth.api.requestPasswordReset({
+    await getAuth().api.requestPasswordReset({
       body: {
         email,
         redirectTo: `/password/reset?${new URLSearchParams({ email }).toString()}`
@@ -104,7 +105,7 @@ export const resetUserPassword = form(resetUserPasswordSchema, async ({ token, _
   requireGuest();
 
   try {
-    await auth.api.resetPassword({
+    await getAuth().api.resetPassword({
       body: {
         newPassword: _password,
         token

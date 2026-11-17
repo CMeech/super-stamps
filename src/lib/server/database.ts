@@ -1,22 +1,23 @@
-import { DATABASE_AUTH_TOKEN, DATABASE_URL } from '$app/env/private';
+import { getRequestEvent } from '$app/server';
 
-import type { Client } from '@libsql/client';
+import { error } from '@sveltejs/kit';
+import * as schema from '#models';
+import { env } from 'cloudflare:workers';
+import { drizzle } from 'drizzle-orm/d1';
 
-import { dev } from '$app/env';
+export function createDatabase() {
+  if (!env.DB) {
+    error(500, 'Database unavailable', { code: 'DATABASE_BINDING_MISSING' });
+  }
 
-import { createClient } from '@libsql/client';
-import { drizzle } from 'drizzle-orm/libsql';
+  return drizzle(env.DB, {
+    schema,
+    casing: 'snake_case'
+  });
+}
 
-import * as schema from '#lib/db/models/index.ts';
+export type Database = ReturnType<typeof createDatabase>;
 
-export const client: Client = createClient({
-  url: DATABASE_URL,
-  authToken: dev ? undefined : DATABASE_AUTH_TOKEN
-});
-
-const db = drizzle(client, {
-  schema,
-  casing: 'snake_case'
-});
-
-export default db;
+export default function getDatabase(): Database {
+  return getRequestEvent().locals.db;
+}

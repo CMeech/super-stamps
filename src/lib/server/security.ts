@@ -5,7 +5,7 @@ import { and, eq, isNotNull } from 'drizzle-orm';
 
 import { Account, Session, TwoFactor, User } from '#lib/db/models/index.ts';
 import { requireAuth } from '#lib/server/auth.ts';
-import db from '#lib/server/database.ts';
+import getDatabase from '#lib/server/database.ts';
 
 import * as m from '#messages';
 import { config } from '#config/server';
@@ -74,7 +74,7 @@ export function getSafeChallengeNext(value: string | null | undefined, fallback 
 }
 
 async function hasCredentialAccountByUserId(userId: string) {
-  const [credentialAccount] = await db
+  const [credentialAccount] = await getDatabase()
     .select({ id: Account.id })
     .from(Account)
     .where(and(eq(Account.userId, userId), eq(Account.providerId, 'credential'), isNotNull(Account.password)))
@@ -84,12 +84,12 @@ async function hasCredentialAccountByUserId(userId: string) {
 }
 
 async function getTwoFactorByUserId(userId: string) {
-  const [twoFactor] = await db.select().from(TwoFactor).where(eq(TwoFactor.userId, userId)).limit(1);
+  const [twoFactor] = await getDatabase().select().from(TwoFactor).where(eq(TwoFactor.userId, userId)).limit(1);
   return twoFactor;
 }
 
 async function hasEnabledTwoFactorByUserId(userId: string) {
-  const [user] = await db
+  const [user] = await getDatabase()
     .select({ twoFactorEnabled: User.twoFactorEnabled })
     .from(User)
     .where(eq(User.id, userId))
@@ -99,7 +99,7 @@ async function hasEnabledTwoFactorByUserId(userId: string) {
     return false;
   }
 
-  const [twoFactor] = await db
+  const [twoFactor] = await getDatabase()
     .select({ id: TwoFactor.id })
     .from(TwoFactor)
     .where(and(eq(TwoFactor.userId, userId), eq(TwoFactor.verified, true)))
@@ -109,7 +109,7 @@ async function hasEnabledTwoFactorByUserId(userId: string) {
 }
 
 async function getSessionChallengeState(sessionToken: string) {
-  const [session] = await db
+  const [session] = await getDatabase()
     .select({
       challengeCompletedAt: Session.challengeCompletedAt,
       sessionCreatedAt: Session.createdAt,
@@ -238,7 +238,7 @@ export async function markChallengeCompleted(sessionToken?: string) {
   const token = sessionToken ?? requireAuth().session.token;
   const now = new Date();
 
-  await db
+  await getDatabase()
     .update(Session)
     .set({
       challengeCompletedAt: now,
@@ -250,7 +250,7 @@ export async function markChallengeCompleted(sessionToken?: string) {
 export async function markTwoFactorChallengeCompleted(sessionToken: string) {
   const now = new Date();
 
-  await db
+  await getDatabase()
     .update(Session)
     .set({
       challengeCompletedAt: now,

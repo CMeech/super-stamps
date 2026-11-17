@@ -3,7 +3,7 @@ import { form, getRequestEvent } from '$app/server';
 import { error, invalid } from '@sveltejs/kit';
 import { APIError as BetterAuthAPIError } from 'better-auth/api';
 
-import { auth } from '#lib/server/auth.ts';
+import { getAuth } from '#lib/server/auth.ts';
 import { flashAndRedirect } from '#lib/server/flash.ts';
 import { checkRateLimit } from '#lib/server/rate-limit.ts';
 import { getChallengeMode, getSafeChallengeNext, markChallengeCompleted } from '#lib/server/security.ts';
@@ -74,7 +74,7 @@ export const completePasswordChallenge = form(passwordChallengeSchema, async ({ 
   }
 
   try {
-    await auth.api.verifyPassword({
+    await getAuth().api.verifyPassword({
       body: { password: _password },
       headers: event.request.headers
     });

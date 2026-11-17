@@ -1,10 +1,8 @@
 declare global {
   namespace App {
-    interface Platform {
-      env: Cloudflare.Env;
-    }
-
     interface Locals {
+      db: import('#lib/server/database.ts').Database;
+      auth: import('#lib/server/auth.ts').Auth;
       user: import('#lib/server/auth.ts').User | null;
       session: import('#lib/server/auth.ts').Session | null;
     }

@@ -7,8 +7,8 @@ import { eq } from 'drizzle-orm';
 import QRCode from 'qrcode';
 
 import { Session, TwoFactor, User } from '#lib/db/models/index.ts';
-import { auth } from '#lib/server/auth.ts';
-import db from '#lib/server/database.ts';
+import { getAuth } from '#lib/server/auth.ts';
+import getDatabase from '#lib/server/database.ts';
 import {
   markTwoFactorChallengeCompleted,
   requireEnabledTwoFactor,
@@ -32,7 +32,7 @@ export type TwoFactorSetup = {
 export type TwoFactorChallengeResult = 'completed' | 'exhausted' | 'expired' | 'failed' | 'invalid' | 'locked';
 
 async function getSecretKey() {
-  return (await auth.$context).secretConfig;
+  return (await getAuth().$context).secretConfig;
 }
 
 function isBetterAuthCode(err: unknown, code: string) {
@@ -99,16 +99,17 @@ export async function startSetup(): Promise<TwoFactorSetup> {
     width: 256
   });
 
-  await db.transaction(async (tx) => {
-    await tx.delete(TwoFactor).where(eq(TwoFactor.userId, user.id));
-    await tx.update(User).set({ twoFactorEnabled: false }).where(eq(User.id, user.id));
-    await tx.insert(TwoFactor).values({
+  const db = getDatabase();
+  await db.batch([
+    db.delete(TwoFactor).where(eq(TwoFactor.userId, user.id)),
+    db.update(User).set({ twoFactorEnabled: false }).where(eq(User.id, user.id)),
+    db.insert(TwoFactor).values({
       backupCodes,
       secret: encryptedSecret,
       userId: user.id,
       verified: false
-    });
-  });
+    })
+  ]);
 
   return {
     manualSetupKey: new URL(totpURI).searchParams.get('secret') ?? '',
@@ -125,24 +126,25 @@ export async function confirmSetup(code: string): Promise<boolean> {
 
   const now = new Date();
 
-  await db.transaction(async (tx) => {
-    await tx.update(TwoFactor).set({ verified: true }).where(eq(TwoFactor.id, twoFactor.id));
-    await tx
+  const db = getDatabase();
+  await db.batch([
+    db.update(TwoFactor).set({ verified: true }).where(eq(TwoFactor.id, twoFactor.id)),
+    db
       .update(User)
       .set({
         twoFactorEnabled: true,
         updatedAt: now
       })
-      .where(eq(User.id, user.id));
-    await tx
+      .where(eq(User.id, user.id)),
+    db
       .update(Session)
       .set({
         challengeCompletedAt: now,
         twoFactorCompletedAt: now,
         updatedAt: now
       })
-      .where(eq(Session.token, session.token));
-  });
+      .where(eq(Session.token, session.token))
+  ]);
 
   return true;
 }
@@ -151,7 +153,7 @@ export async function verifyTotpChallenge(code: string): Promise<TwoFactorChalle
   const { request } = getRequestEvent();
 
   try {
-    const result = await auth.api.verifyTOTP({
+    const result = await getAuth().api.verifyTOTP({
       body: { code },
       headers: request.headers
     });
@@ -173,7 +175,7 @@ export async function verifyRecoveryChallenge(code: string): Promise<TwoFactorCh
   const { request } = getRequestEvent();
 
   try {
-    const result = await auth.api.verifyBackupCode({
+    const result = await getAuth().api.verifyBackupCode({
       body: { code },
       headers: request.headers
     });
@@ -199,23 +201,24 @@ export async function disable() {
 
   const now = new Date();
 
-  await db.transaction(async (tx) => {
-    await tx.delete(TwoFactor).where(eq(TwoFactor.userId, user.id));
-    await tx
+  const db = getDatabase();
+  await db.batch([
+    db.delete(TwoFactor).where(eq(TwoFactor.userId, user.id)),
+    db
       .update(User)
       .set({
         twoFactorEnabled: false,
         updatedAt: now
       })
-      .where(eq(User.id, user.id));
-    await tx
+      .where(eq(User.id, user.id)),
+    db
       .update(Session)
       .set({
         twoFactorCompletedAt: null,
         updatedAt: now
       })
-      .where(eq(Session.token, session.token));
-  });
+      .where(eq(Session.token, session.token))
+  ]);
 }
 
 export async function getRecoveryCodes(): Promise<string[]> {
@@ -227,7 +230,7 @@ export async function regenerateRecoveryCodes(): Promise<string[]> {
   const { twoFactor } = await requireEnabledTwoFactor();
   const recoveryCodes = createRecoveryCodes();
 
-  await db
+  await getDatabase()
     .update(TwoFactor)
     .set({
       backupCodes: await encryptRecoveryCodes(recoveryCodes)

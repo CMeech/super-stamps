@@ -23,7 +23,7 @@
     "db:generate": "drizzle-kit generate --config drizzle-d1.config.ts",
     "db:migrate": "wrangler d1 migrations apply DB --local",
     "db:drop": "drizzle-kit drop",
-    "db:clear": "vite-node --options.transformMode.ssr='/.*/' src/lib/db/clear",
+    "db:clear": "wrangler d1 execute DB --local --command 'DELETE FROM user; DELETE FROM verification;'",
     "db:studio": "drizzle-kit studio"
   },
   "devDependencies": {

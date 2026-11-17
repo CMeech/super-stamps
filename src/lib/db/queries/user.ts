@@ -1,9 +1,10 @@
+import type { Database } from '#lib/server/database.ts';
+
 import { and, eq, isNull, like, or } from 'drizzle-orm';
 
 import { User } from '#lib/db/models/index.ts';
-import db from '#lib/server/database.ts';
 
-export async function setUserImageFromOAuth(userId: string, image: string): Promise<void> {
+export async function setUserImageFromOAuth(db: Database, userId: string, image: string): Promise<void> {
   await db
     .update(User)
     .set({ image })

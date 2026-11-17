@@ -1,13 +1,13 @@
 import type { RequestEvent } from '@sveltejs/kit';
 
-import { auth } from '#lib/server/auth.ts';
+import { getAuth } from '#lib/server/auth.ts';
 import { getSafeChallengeNext } from '#lib/server/security.ts';
 
 export async function GET({ url }: RequestEvent) {
   const callbackURL = getSafeChallengeNext(url.searchParams.get('next'), '/dashboard');
 
   try {
-    const response = await auth.api.signInSocial({
+    const response = await getAuth().api.signInSocial({
       body: {
         provider: 'google',
         callbackURL

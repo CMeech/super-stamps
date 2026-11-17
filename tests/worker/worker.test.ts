@@ -3,56 +3,29 @@ import type { TestHarness } from 'wrangler';
 import { spawn } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
-import { setTimeout as delay } from 'node:timers/promises';
 import { parseEnv } from 'node:util';
-import { createClient } from '@libsql/client/http';
-import { drizzle } from 'drizzle-orm/libsql';
-import { migrate } from 'drizzle-orm/libsql/migrator';
 import { afterAll, beforeAll, expect, it } from 'vitest';
 import { createTestHarness } from 'wrangler';
 
 const base = 'http://127.0.0.1:8787';
-// Disposable sqld lets the built Worker use the same libSQL HTTP driver it uses with Turso.
-const databaseUrl = 'http://database:8080';
-const databaseToken = randomUUID();
 const secret = randomUUID();
 const account = {
   name: `Smoke ${randomUUID()}`,
-  email: `smoke-${randomUUID()}@example.test`,
+  email: `smoke-${randomUUID()}@example.invalid`,
   password: `Smoke-${randomUUID()}`
 };
 const wrongPassword = randomUUID();
 const queryMarker = randomUUID();
 const headerMarker = randomUUID();
-const credentialMarkers = new Set([
-  ...Object.values(account),
-  databaseToken,
-  secret,
-  wrongPassword,
-  queryMarker,
-  headerMarker
-]);
+const credentialMarkers = new Set([...Object.values(account), secret, wrongPassword, queryMarker, headerMarker]);
 const cookies = new Map<string, string>();
-const database = createClient({ url: databaseUrl, authToken: databaseToken });
+let database: D1Database;
 let harness: TestHarness | undefined;
 let buildOutput = '';
 let stage = 'prepare the isolated environment';
 
 function check(condition: unknown): asserts condition {
   expect(Boolean(condition), `Worker check failed during the step to ${stage}.`).toBe(true);
-}
-
-async function waitFor(probe: () => Promise<unknown>) {
-  for (let attempt = 0; attempt < 45; attempt++) {
-    try {
-      const result = await probe();
-      if (result) return result;
-    } catch {
-      // The local service may still be starting.
-    }
-    await delay(1000);
-  }
-  throw new Error('Smoke service did not become ready');
 }
 
 function run(args: string[], env: NodeJS.ProcessEnv, capture: (chunk: string) => void) {
@@ -127,14 +100,8 @@ beforeAll(async () => {
     ...parseEnv(exampleEnv),
     PUBLIC_BASE_URL: base,
     BETTER_AUTH_URL: base,
-    BETTER_AUTH_SECRET: secret,
-    DATABASE_URL: databaseUrl,
-    DATABASE_AUTH_TOKEN: databaseToken
+    BETTER_AUTH_SECRET: secret
   };
-  stage = 'apply Drizzle migrations to local libSQL';
-  await waitFor(() => database.execute('select 1'));
-  const migrationDb = drizzle(database);
-  await migrate(migrationDb, { migrationsFolder: 'src/lib/db/migrations' });
 
   stage = 'build the Cloudflare Worker';
   const build = run(['build'], { ...process.env, ...env }, (chunk) => {
@@ -148,6 +115,11 @@ beforeAll(async () => {
     workers: [{ configPath: './wrangler.jsonc', secrets: env }]
   });
   await harness.listen();
+
+  stage = 'apply checked-in migrations to the isolated D1 binding';
+  const worker = harness.getWorker<{ DB: D1Database }>();
+  await worker.applyD1Migrations('DB');
+  ({ DB: database } = await worker.getEnv());
 }, 120_000);
 
 it('serves a known asset through the Worker ASSETS binding', async () => {
@@ -163,8 +135,12 @@ it('renders sign-in HTML and persists and revokes database-backed sessions', asy
   const loginPage = await request('/login');
   check(loginPage.status === 200);
   const loginHtml = await loginPage.text();
-  const hasSignInForm = /<form\b/.test(loginHtml) && loginHtml.includes('Sign in');
-  check(hasSignInForm && !loginHtml.includes(secret));
+  const loginAction = loginHtml.match(/<form\b[^>]*\baction="([^"]*\/remote=[^"]+)"/)?.[1];
+  const emailField = loginHtml.match(/\bname="(email\/[^"]+)"/)?.[1];
+  const passwordField = loginHtml.match(/\bname="(_password\/[^"]+)"/)?.[1];
+  const nextField = loginHtml.match(/\bname="(next\/[^"]+)"/)?.[1];
+  check(loginAction && emailField && passwordField && nextField && loginHtml.includes('Sign in'));
+  check(!loginHtml.includes(secret));
 
   stage = 'seed the synthetic account through Better Auth';
   const signup = await authRequest('/api/auth/sign-up/email', account);
@@ -190,17 +166,22 @@ it('renders sign-in HTML and persists and revokes database-backed sessions', asy
   );
   check(rejected.status === 401);
 
-  stage = 'verify sign-in and database-backed session persistence';
-  const signIn = await authRequest('/api/auth/sign-in/email', {
-    email: account.email,
-    password: account.password
+  stage = 'verify remote form sign-in and database-backed session persistence';
+  const signIn = await request(`/login${loginAction}`, {
+    method: 'POST',
+    headers: { Accept: 'text/html', 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({
+      [emailField]: account.email,
+      [passwordField]: account.password,
+      [nextField]: '/dashboard'
+    })
   });
-  check(signIn.ok);
+  check(signIn.status === 303 && signIn.headers.get('location') === '/dashboard');
   const signedInCookie = cookieHeader();
   check(signedInCookie.length > 0);
-  const sessions = await database.execute('select token from session');
-  check(sessions.rows.length === 1 && typeof sessions.rows[0].token === 'string');
-  const token = sessions.rows[0].token;
+  const sessions = await database.prepare('select token from session').all<{ token: string }>();
+  check(sessions.results.length === 1 && typeof sessions.results[0].token === 'string');
+  const token = sessions.results[0].token;
   credentialMarkers.add(token);
   const sessionCookie = [...cookies].find(([, value]) => decodeURIComponent(value).startsWith(`${token}.`));
   check(sessionCookie);
@@ -220,18 +201,16 @@ it('renders sign-in HTML and persists and revokes database-backed sessions', asy
   const dashboardWithOriginalCookie = await request('/dashboard', {}, signedInCookie, false);
   checkPrivateRedirect(dashboardWithOriginalCookie);
 
-  const sessionsAfterSignOut = await database.execute('select token from session');
-  check(sessionsAfterSignOut.rows.length === 0);
+  const sessionsAfterSignOut = await database.prepare('select token from session').all<{ token: string }>();
+  check(sessionsAfterSignOut.results.length === 0);
 }, 30_000);
 
 afterAll(async () => {
   try {
     const workerOutput = JSON.stringify(harness?.getLogs() ?? []);
-    const libsqlOutput = await readFile('/diagnostics/libsql.log', 'utf8');
     const diagnosticStreams = [
       ['build', buildOutput],
-      ['workerd and application', workerOutput],
-      ['local libSQL', libsqlOutput]
+      ['workerd and application', workerOutput]
     ];
 
     for (const [stream, output] of diagnosticStreams) {
@@ -241,10 +220,8 @@ afterAll(async () => {
       });
       expect(containsSyntheticMarker, `Synthetic PII or credential marker in ${stream} output`).toBe(false);
     }
-    expect(libsqlOutput.trim().length > 0, 'Expected local libSQL diagnostics').toBe(true);
     expect(workerOutput.includes('Invalid password'), 'Expected the invalid-password warning').toBe(true);
   } finally {
-    database.close();
     await harness?.close();
   }
 });

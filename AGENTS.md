@@ -32,7 +32,7 @@
 - Use modern, commonly recommended approaches when they fit this codebase. Do not replace working local patterns just for novelty. If a new pattern seems essential, suggest it first and explain the tradeoff.
 - Keep code, comments, and docs concise. Avoid non-essential abstractions, boilerplate, explanatory notes, and fluff.
 - Review suggestions and changes through the project's philosophy. Explain what they affect, why they are better or worse, and whether they still fit existing decisions.
-- Update existing docs only when behavior, architecture, commands, or project conventions change. Do not add docs for routine implementation details.
+- Consolidate README and architecture updates at module closeout. During individual work items, edit those files only when explicitly requested. At closeout, document changes to behavior, architecture, commands, or project conventions.
 - Use the issue tracker for project history. Do not create, update, or carry forward changelog documents.
 
 ---

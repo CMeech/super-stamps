@@ -1,6 +1,8 @@
 import { BETTER_AUTH_SECRET, BETTER_AUTH_URL, GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET } from '$app/env/private';
 import { PUBLIC_BASE_URL } from '$app/env/public';
 
+import type { Database } from '#lib/server/database.ts';
+
 import { getRequestEvent } from '$app/server';
 
 import { redirect } from '@sveltejs/kit';
@@ -12,7 +14,6 @@ import { sveltekitCookies } from 'better-auth/svelte-kit';
 
 import { Account, Session, TwoFactor, User, Verification } from '#lib/db/models/index.ts';
 import { EMAILS, sendEmail } from '#lib/mail/mailer.ts';
-import db from '#lib/server/database.ts';
 import { normalizeFullName } from '#lib/utils/name.ts';
 
 import { config } from '#config/server';
@@ -66,7 +67,7 @@ function getGoogleImageFromIdToken(idToken: string | null | undefined): string |
   }
 }
 
-async function syncGoogleImage(account: OAuthAccount | null | undefined): Promise<void> {
+async function syncGoogleImage(db: Database, account: OAuthAccount | null | undefined): Promise<void> {
   if (!account || account.providerId !== 'google') {
     return;
   }
@@ -78,98 +79,106 @@ async function syncGoogleImage(account: OAuthAccount | null | undefined): Promis
   }
 
   try {
-    await setUserImageFromOAuth(account.userId, image);
-  } catch (error) {
-    console.error('Failed to sync Google profile image:', error);
+    await setUserImageFromOAuth(db, account.userId, image);
+  } catch {
+    console.error('Failed to sync Google profile image');
   }
 }
 
-export const auth = betterAuth({
-  appName: config.app.name,
-  baseURL: BETTER_AUTH_URL,
-  secret: BETTER_AUTH_SECRET,
-  database: drizzleAdapter(db, {
-    provider: 'sqlite',
-    schema: {
-      user: User,
-      session: Session,
-      account: Account,
-      verification: Verification,
-      twoFactor: TwoFactor
-    }
-  }),
-  plugins: [
-    twoFactor({
-      issuer: config.app.name,
-      backupCodeOptions: {
-        amount: 8
-      },
-      twoFactorCookieMaxAge: 10 * 60
+export function createAuth(db: Database) {
+  return betterAuth({
+    appName: config.app.name,
+    baseURL: BETTER_AUTH_URL,
+    secret: BETTER_AUTH_SECRET,
+    database: drizzleAdapter(db, {
+      provider: 'sqlite',
+      transaction: false,
+      schema: {
+        user: User,
+        session: Session,
+        account: Account,
+        verification: Verification,
+        twoFactor: TwoFactor
+      }
     }),
-    sveltekitCookies(getRequestEvent)
-  ],
-  advanced: {
-    cookiePrefix: config.auth.session.cookiePrefix,
-    database: {
-      generateId: false
-    }
-  },
-  session: {
-    expiresIn: config.auth.session.expiresIn
-  },
-  databaseHooks: {
-    account: {
-      create: {
-        after: syncGoogleImage
-      },
-      update: {
-        after: syncGoogleImage
-      }
-    }
-  },
-  emailAndPassword: {
-    enabled: true,
-    autoSignIn: true,
-    sendResetPassword: async ({ user, url }) => {
-      await sendEmail(user?.email, EMAILS.resetPassword, {
-        userName: user?.name ?? 'there',
-        url
-      });
-    }
-  },
-  socialProviders: {
-    google: {
-      clientId: GOOGLE_CLIENT_ID,
-      clientSecret: GOOGLE_CLIENT_SECRET,
-      redirectUri: `${PUBLIC_BASE_URL}/auth/social/callback/google`,
-      overrideUserInfoOnSignIn: false,
-      mapProfileToUser: (profile) => {
-        const image = getGoogleProfileImage(profile);
-
-        return {
-          ...(image && { image }),
-          name: getGoogleProfileName(profile)
-        };
-      }
-    }
-  },
-  user: {
-    additionalFields: {
-      publicId: {
-        type: 'string',
-        unique: true,
-        index: true,
-        input: false
+    plugins: [
+      twoFactor({
+        issuer: config.app.name,
+        backupCodeOptions: {
+          amount: 8
+        },
+        twoFactorCookieMaxAge: 10 * 60
+      }),
+      sveltekitCookies(getRequestEvent)
+    ],
+    advanced: {
+      cookiePrefix: config.auth.session.cookiePrefix,
+      database: {
+        generateId: false
       }
     },
-    deleteUser: {
-      enabled: true
-    }
-  }
-});
+    session: {
+      expiresIn: config.auth.session.expiresIn
+    },
+    databaseHooks: {
+      account: {
+        create: {
+          after: (account) => syncGoogleImage(db, account)
+        },
+        update: {
+          after: (account) => syncGoogleImage(db, account)
+        }
+      }
+    },
+    emailAndPassword: {
+      enabled: true,
+      autoSignIn: true,
+      sendResetPassword: async ({ user, url }) => {
+        await sendEmail(user?.email, EMAILS.resetPassword, {
+          userName: user?.name ?? 'there',
+          url
+        });
+      }
+    },
+    socialProviders: {
+      google: {
+        clientId: GOOGLE_CLIENT_ID,
+        clientSecret: GOOGLE_CLIENT_SECRET,
+        redirectUri: `${PUBLIC_BASE_URL}/auth/social/callback/google`,
+        overrideUserInfoOnSignIn: false,
+        mapProfileToUser: (profile) => {
+          const image = getGoogleProfileImage(profile);
 
-export type User = typeof auth.$Infer.Session.user;
-export type Session = typeof auth.$Infer.Session.session;
+          return {
+            ...(image && { image }),
+            name: getGoogleProfileName(profile)
+          };
+        }
+      }
+    },
+    user: {
+      additionalFields: {
+        publicId: {
+          type: 'string',
+          unique: true,
+          index: true,
+          input: false
+        }
+      },
+      deleteUser: {
+        enabled: true
+      }
+    }
+  });
+}
+
+export type Auth = ReturnType<typeof createAuth>;
+export type User = Auth['$Infer']['Session']['user'];
+export type Session = Auth['$Infer']['Session']['session'];
+
+export function getAuth(): Auth {
+  return getRequestEvent().locals.auth;
+}
 
 export function requireAuth() {
   const { locals } = getRequestEvent();
