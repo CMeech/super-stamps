@@ -65,7 +65,9 @@ Configure the SvelteKit Cloudflare adapter and Wrangler with pinned compatibilit
 
 Connect to Turso remotely. A normal Worker has no persistent local database file; production must not depend on an embedded SQLite/Turso file or an in-process embedded replica for durability. Keep secrets, including database tokens, OAuth keys, and storage credentials, in server-only configuration.
 
-Use isolated development, preview, and production resources. Apply database migrations through a controlled deployment step, rather than from every incoming request or Worker instance. Validate database latency, connection behavior, bundle size, and runtime limits.
+Cloudflare Workers is the production target. During the MVP, verify the built Worker locally in Docker using the Workers test harness and isolated test resources. Defer a hosted Cloudflare staging environment until after the MVP.
+
+Apply production database migrations through a controlled deployment step. Validate database latency, connection behavior, bundle size, and runtime limits.
 
 Do not rely on process-local memory for durable state, shared notification subscriptions, cross-instance coordination, or reliable event delivery. Any required coordination or background processing must use an appropriate external service or Cloudflare binding.
 
@@ -81,10 +83,10 @@ For local development, initialize a LocalStack bucket and its CORS configuration
 - Configure the signing endpoint before generating a URL. Rewriting a signed hostname or path afterward can invalidate the signature.
 - Allow the actual frontend origins, required methods, and upload headers in the bucket CORS policy. Expose response headers such as ETag only when the application needs them.
 - Configure public file URLs separately from the API/signing endpoint. Define access policy explicitly: public assets may use a public base URL; private files require authorized retrieval or signed download URLs.
-- Test browser preflight, upload, and retrieval against LocalStack and a real R2 staging bucket. LocalStack emulates S3, not every R2 behavior.
+- Test browser preflight, upload, and retrieval against LocalStack during the MVP. Defer R2 staging verification until after the MVP.
 - Never expose storage access keys to the frontend. Authorize upload preparation and validate upload policy, ownership, content type, and size server-side; verify stored objects where necessary.
 
-Acceptance: browser uploads and reads work locally and in staging with the intended CORS and CSP policies, and the application contains no hardcoded Cloudflare storage endpoint.
+MVP acceptance requires browser uploads and reads to work locally with the intended CORS and CSP policies, using a configurable storage endpoint.
 
 ## 6. Frontend Content Security Policy — required future work
 
@@ -166,11 +168,11 @@ Establish testing infrastructure during bootstrap and expand it with each featur
 - **Workers runtime tests:** configure Cloudflare's current `@cloudflare/vitest-plugin` integration to execute runtime-dependent modules and binding interactions locally through Miniflare/workerd. Pin compatible versions with Vitest and the starter; do not copy older pool configuration without checking compatibility.
 - **Application integration tests:** use Cloudflare's `createTestHarness()` with Vitest to exercise the built Cloudflare application through HTTP routes. Prove the harness works with the selected SvelteKit adapter output during bootstrap. Cover authentication, OAuth token validation, Square webhooks, MCP calls, and the services/bindings each route uses.
 - **Browser tests:** use Playwright against the locally built Workers application for sign-in, consent, customer workflows, real browser CORS/CSP enforcement, uploads, and SSE disconnect/reconnect behavior. A Node development server alone does not validate the production runtime.
-- **Staging smoke tests:** run a small suite against an isolated deployed environment to verify actual Turso/R2 access, domains, secrets, streaming, and Square sandbox integration. Local emulation does not establish full hosted-service parity.
+- **Hosted staging smoke tests (post-MVP):** verify deployed service connectivity, domains, secrets, streaming, and Square sandbox integration in an isolated environment.
 
 Simulate external provider responses in routine tests, including rate limits, timeouts, malformed responses, and retries. Keep live-provider checks separate and use sandbox credentials and disposable data. Isolate test databases, storage, queue state, and account fixtures; never use production resources for automated mutation tests.
 
-Provide documented commands for unit/runtime tests, built-application integration tests, browser tests, type checking, linting, and production builds. Run appropriate automated checks in CI for changes, with staging checks requiring their own environment configuration. Use meaningful assertions on business effects and account isolation, rather than relying solely on response codes or coverage percentages.
+Provide documented commands for unit/runtime tests, built-application integration tests, browser tests, type checking, linting, and production builds. Run appropriate automated checks in CI for changes. Assert business effects and account isolation where applicable.
 
 Acceptance: CI can build the Cloudflare target and run repeatable local tests without production credentials; integration and browser tests detect runtime, authorization, CORS/CSP, and retry defects.
 

@@ -30,10 +30,12 @@ docker run --rm -p 127.0.0.1:8787:8787 superstamps-starter sh -ec '
 
 Open [the sign-in page](http://127.0.0.1:8787/login) to verify SSR. Sign-in, email, and file uploads require their own service configuration. Worker builds use libSQL over HTTP. The Vite dev server and Drizzle tooling can still use a local SQLite file.
 
+Run `bash scripts/smoke-worker.sh` to verify SSR, database-backed sign-in and sign-out, private-route access, and diagnostic redaction. The command starts a disposable libSQL service with Docker Compose and uses synthetic credentials.
+
 ## Worker environments
 
 Wrangler targets separate Workers through `--env preview`, `--env staging`, and `--env production`. Give each Worker its own Turso database and token, Better Auth secret, and any OAuth, storage, or email resources it uses. Use the Worker’s dashboard settings for public values and each Worker’s own encrypted secrets for credentials. The variable names are listed in `src/env.ts`. Set `PUBLIC_BASE_URL` and `BETTER_AUTH_URL` to that environment’s origin. Production requires a Cloudflare route or custom domain.
 
-Build with `pnpm build` and deploy staging with `pnpm exec wrangler deploy --env staging` from the same workspace. For a first deploy, `--secrets-file` can supply staging configuration as encrypted bindings from an ignored file. Verify that `/login` returns the rendered sign-in form without exposing the secret values. [Cloudflare Wrangler environments](https://developers.cloudflare.com/workers/wrangler/environments/) · [Worker secrets](https://developers.cloudflare.com/workers/configuration/secrets/)
+For MVP verification, run the built Worker locally in Docker. The hosted staging deployment is deferred until after the MVP. See the [technology stack](docs/TECH_STACK.md#4-cloudflare-edge-deployment--required-future-work) for the environment policy.
 
 See the [architecture guide](docs/architecture.md) for the project layout, coding conventions, and available commands.

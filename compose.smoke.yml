@@ -1,0 +1,23 @@
+services:
+  database:
+    image: ghcr.io/tursodatabase/libsql-server:3ec6803
+    environment:
+      SQLD_NODE: standalone
+      SQLD_DB_PATH: /tmp/smoke-db
+      SQLD_HTTP_LISTEN_ADDR: 0.0.0.0:8080
+    entrypoint: ['/bin/sh', '-c']
+    command: ['exec /bin/sqld > /diagnostics/libsql.log 2>&1']
+    volumes:
+      - diagnostics:/diagnostics
+
+  smoke:
+    image: superstamps-smoke:local
+    build: .
+    depends_on:
+      - database
+    command: ['node', 'scripts/smoke-worker.mjs']
+    volumes:
+      - diagnostics:/diagnostics:ro
+
+volumes:
+  diagnostics:
