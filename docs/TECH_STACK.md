@@ -2,7 +2,7 @@
 
 **Project:** Loyalty Card Application  
 **Date:** November 11, 2026  
-**Last updated:** November 14, 2026  
+**Last updated:** November 17, 2026\
 **Status:** Proposed technical baseline; implementation and deployment validation pending
 
 ## 1. Purpose and architectural direction
@@ -21,13 +21,13 @@ This document records decisions and required future work. It does not represent 
 | Language and framework          | TypeScript, Svelte, SvelteKit                                | UI, server rendering, backend endpoints, and server-side business logic                                 |
 | UI                              | Tailwind CSS and shadcn-svelte                               | Styling and reusable components inherited from Omakase                                                  |
 | Production runtime              | Cloudflare Workers                                           | Edge execution; Cloudflare adapter and runtime compatibility validation required                        |
-| Application database            | Turso Cloud                                                  | Operational application data and authentication records                                                 |
-| Database access                 | Drizzle ORM                                                  | Typed schema, queries, and controlled migrations; validate the Turso driver under Workers               |
+| Application database            | Cloudflare D1                                                | Operational application data and authentication records                                                 |
+| Database access                 | Drizzle ORM                                                  | Typed SQLite schema and queries via the Drizzle D1 driver, with controlled SQL migrations               |
 | Authentication                  | Better Auth, hosted within the application                   | Users, sessions, password login, and configured social providers; no separate Better Auth cloud account |
 | Delegated / machine access      | Better Auth OAuth Provider plugin                            | Authorization Code + PKCE and client credentials; additional implementation required                    |
 | Production object storage       | Cloudflare R2 through the S3 API                             | Uploaded files; keep application storage configuration portable                                         |
 | Local object storage            | LocalStack S3                                                | Local development and integration testing; configuration required                                       |
-| Local database                  | SQLite/libSQL compatible with the application schema         | Local development; not persistent production storage inside Workers                                     |
+| Local database                  | Wrangler local D1                                            | Isolated local development and Workers runtime tests                                                    |
 | Transactional email             | Resend, inherited from the starter                           | Confirm provider and local email testing before implementing account recovery flows                     |
 | Analytics event delivery        | External event pipeline; provider undecided                  | Backend event publication and analytics/history storage outside the application database                |
 | Live user notifications         | Transport and coordination service undecided                 | Authenticated delivery to active frontend clients                                                       |
@@ -41,7 +41,7 @@ The inspected starter currently declares SvelteKit 3, Svelte 5, and Node 24+ for
 
 ## 3. Authentication ownership and access model
 
-Better Auth executes within the SvelteKit backend and uses the application database. Application operators control authentication configuration, signing keys, client registrations, and authorization policy. Hosted Turso and external storage/email providers require their own accounts; Better Auth does not require a hosted identity-provider account.
+Better Auth executes within the SvelteKit backend and uses the application database. Application operators control authentication configuration, signing keys, client registrations, and authorization policy. Cloudflare hosts the production database. Better Auth runs under the application’s own deployment.
 
 ### Browser users
 
@@ -63,11 +63,13 @@ Omakase's existing password/Google login configuration does not itself enable ei
 
 Configure the SvelteKit Cloudflare adapter and Wrangler with pinned compatibility settings, environment bindings, secrets, deployment environments, and custom-domain routing. Audit dependencies for native modules, filesystem assumptions, Node-specific behavior, and request lifecycle restrictions. Enable Node compatibility only where required and verify functionality in the Workers runtime.
 
-Connect to Turso remotely. A normal Worker has no persistent local database file; production must not depend on an embedded SQLite/Turso file or an in-process embedded replica for durability. Keep secrets, including database tokens, OAuth keys, and storage credentials, in server-only configuration.
+Bind D1 to each deployed Worker environment and initialize Drizzle from the request-scoped binding. Use an isolated local D1 database for development and a disposable D1 database for the Workers test harness. Keep OAuth keys and storage credentials in server-only configuration. The runtime database URL and token are transitional configuration until the D1 cutover.
 
 Cloudflare Workers is the production target. During the MVP, verify the built Worker locally in Docker using the Workers test harness and isolated test resources. Defer a hosted Cloudflare staging environment until after the MVP.
 
-Apply production database migrations through a controlled deployment step. Validate database latency, connection behavior, bundle size, and runtime limits.
+Generate SQL migrations with Drizzle Kit and apply them to local D1 before verification. Apply remote D1 migrations through a controlled deploy step. Verify schema compatibility, Better Auth sessions, representative queries, concurrent writes, and restore before cutover. Verify data import if any existing records need to move.
+
+D1 encrypts data at rest with Cloudflare-managed keys and protects data in transit. Keep application-level encryption and key rotation for sensitive integration credentials. Confirm any customer-managed key requirements before loading real PII.
 
 Do not rely on process-local memory for durable state, shared notification subscriptions, cross-instance coordination, or reliable event delivery. Any required coordination or background processing must use an appropriate external service or Cloudflare binding.
 
@@ -196,16 +198,16 @@ Acceptance: retrying the same logical action across API, webhook, or MCP entry p
 
 ## 13. Implementation milestones
 
-| Milestone                     | Deliverable                                                                                                                                                                                              |
-| ----------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 1. Bootstrap and edge proof   | Pin Omakase revision; validate build, SSR, database, and Better Auth sessions under Workers; establish Vitest/runtime, integration, Playwright, and CI foundations; add the local Compose workflow below |
-| 2. Storage portability        | Configurable S3 integration, LocalStack initialization, public/private URL handling, CORS browser verification                                                                                           |
-| 3. Browser security           | CSP report-only rollout followed by enforcement and complete browser flow verification                                                                                                                   |
-| 4. Integration authentication | Auth Code + PKCE, consent, token verification, refresh/revocation, and scoped machine clients                                                                                                            |
-| 5. Analytics pipeline         | Select sink/transport; document retention and delivery guarantees; verify failure behavior                                                                                                               |
-| 6. Live notifications         | Select transport/coordination; implement authenticated routing, reconnect behavior, and cross-instance tests                                                                                             |
-| 7. Integration service layer  | Square webhook verification, account mapping, durable processing, deduplication, and server-side API access                                                                                              |
-| 8. MCP tool API               | Select SDK/transport; implement scoped tools over shared services and verify target LLM adapter interoperability                                                                                         |
+| Milestone                     | Deliverable                                                                                                                                                                                                                |
+| ----------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1. Bootstrap and edge proof   | Pin Omakase revision; validate build, SSR, D1 bindings and migrations, and Better Auth sessions under Workers; establish Vitest/runtime, integration, Playwright, and CI foundations; add the local Compose workflow below |
+| 2. Storage portability        | Configurable S3 integration, LocalStack initialization, public/private URL handling, CORS browser verification                                                                                                             |
+| 3. Browser security           | CSP report-only rollout followed by enforcement and complete browser flow verification                                                                                                                                     |
+| 4. Integration authentication | Auth Code + PKCE, consent, token verification, refresh/revocation, and scoped machine clients                                                                                                                              |
+| 5. Analytics pipeline         | Select sink/transport; document retention and delivery guarantees; verify failure behavior                                                                                                                                 |
+| 6. Live notifications         | Select transport/coordination; implement authenticated routing, reconnect behavior, and cross-instance tests                                                                                                               |
+| 7. Integration service layer  | Square webhook verification, account mapping, durable processing, deduplication, and server-side API access                                                                                                                |
+| 8. MCP tool API               | Select SDK/transport; implement scoped tools over shared services and verify target LLM adapter interoperability                                                                                                           |
 
 ### Milestone 1: Starter architecture and Workers compatibility
 
@@ -215,7 +217,7 @@ Acceptance: retrying the same logical action across API, webhook, or MCP entry p
 
 ### Milestone 1: Local developer workflow
 
-- **Docker Compose:** Provide a development Compose file that runs the SvelteKit/Vite dev server with one documented startup command. Mount or sync source files, keep container dependencies separate from host dependencies, and publish the web port so the browser can receive live updates. Add LocalStack as an optional profile for S3 work. Keep local database data in a named volume and document how to reset it. Compose is for local development; Workers remains the production target.
+- **Docker Compose:** Provide a development Compose file that runs the SvelteKit/Vite dev server with one documented startup command. Mount or sync source files, keep container dependencies separate from host dependencies, and publish the web port so the browser can receive live updates. Add LocalStack as an optional profile for S3 work. Persist the local D1 state in a named volume and document how to reset it. Compose is for local development; Workers remains the production target.
 - **Fast edit loop:** Keep the host-native dev command available. Verify that editing a Svelte component updates the browser and editing a server route changes the next request without manual restarts, including when running under Compose. Document any watcher or hot reload networking settings needed.
 - **Reproducible setup:** Pin the Node and package manager versions, commit the lockfile, and provide a sample environment file with safe local defaults and placeholders for secrets. Document migration, seed, and reset commands. Seed one local operator and a few synthetic customer cards for repeatable development and demos.
 - **Separate edge check:** Document a command to build the Cloudflare target and run it locally with Wrangler. Use it to check Workers-specific behavior and bindings independently of the day-to-day Vite loop. Keep the same test and check commands available locally and in CI.
@@ -244,6 +246,7 @@ Initial source and documentation review: November 11, 2026. Workers testing guid
 - [Omakase dependencies](https://github.com/n00ki/sveltekit-omakase/blob/main/package.json), [deployment configuration](https://github.com/n00ki/sveltekit-omakase/blob/main/vite.config.ts), and [database connection](https://github.com/n00ki/sveltekit-omakase/blob/main/src/lib/server/database.ts)
 - [Omakase authentication](https://github.com/n00ki/sveltekit-omakase/blob/main/src/lib/server/auth.ts), [storage](https://github.com/n00ki/sveltekit-omakase/blob/main/src/lib/server/storage.ts), and [upload URL helpers](https://github.com/n00ki/sveltekit-omakase/blob/main/src/lib/upload/policies.ts)
 - [SvelteKit Cloudflare adapter](https://svelte.dev/docs/kit/adapter-cloudflare) and [configuration reference](https://svelte.dev/docs/kit/@sveltejs-kit-vite)
+- [Cloudflare D1 bindings](https://developers.cloudflare.com/d1/get-started/), [local development](https://developers.cloudflare.com/d1/best-practices/local-development/), [migrations](https://developers.cloudflare.com/d1/reference/migrations/), and [data security](https://developers.cloudflare.com/d1/reference/data-security/)
 - [Cloudflare Workers filesystem limitations](https://developers.cloudflare.com/workers/runtime-apis/nodejs/fs/)
 - [Better Auth OAuth Provider](https://better-auth.com/docs/plugins/oauth-provider), [client registration and machine scopes](https://better-auth.com/docs/plugins/oauth-provider/clients), and [MCP integration](https://better-auth.com/docs/plugins/mcp)
 - [Cloudflare R2 S3 compatibility](https://developers.cloudflare.com/r2/api/s3/api/)

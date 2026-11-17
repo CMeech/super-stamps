@@ -1,6 +1,6 @@
 # SuperStamps architecture
 
-SuperStamps uses the SvelteKit Omakase starter as the foundation for digital loyalty cards. The stack and patterns below describe the imported baseline. The [SuperStamps technology stack](TECH_STACK.md) governs project decisions. Cloudflare Workers is the production target. Docker provides the Node toolchain for local verification, and Workers compatibility is verified separately.
+SuperStamps uses the SvelteKit Omakase starter as the foundation for digital loyalty cards. This guide combines the imported starter conventions with SuperStamps’ architecture decisions. The [SuperStamps technology stack](TECH_STACK.md) governs project decisions. Cloudflare Workers is the production target. Docker provides the Node toolchain for local verification, and Workers compatibility is verified separately.
 
 ## Stack
 
@@ -8,7 +8,7 @@ SuperStamps uses the SvelteKit Omakase starter as the foundation for digital loy
 | ------------ | --------------------------------------------------- |
 | **Backend**  | SvelteKit, TypeScript, Better Auth, Drizzle ORM     |
 | **Frontend** | Svelte 5, TypeScript, TailwindCSS v4, shadcn-svelte |
-| **Database** | Turso/LibSQL                                        |
+| **Database** | Cloudflare D1 (cutover pending)                     |
 | **Forms**    | Remote Functions, Valibot                           |
 | **Email**    | Resend, Better Svelte Email                         |
 | **Storage**  | Cloudflare R2                                       |
@@ -264,9 +264,13 @@ export const loginSchema = v.object({
 
 ---
 
+## Database
+
+Cloudflare D1 is the selected database for operational and authentication data. The D1 migration will use Drizzle with the request-scoped Workers binding and keep Cloudflare-specific initialization in the server database layer. Apply checked-in SQL migrations to local D1 before verification and to the target D1 database during deployment. See the [deployment guidance](TECH_STACK.md#4-cloudflare-edge-deployment--required-future-work).
+
 ## Commands
 
-Use the [Docker quick start](../README.md#verify-in-docker) for a frozen dependency install, type checking, and the starter build. Inside the container, the following commands are available.
+Use the [Docker quick start](../README.md#verify-in-docker) for a frozen dependency install, type checking, and the starter build. Inside the container, the following commands are available. The database commands below serve the current starter until the D1 cutover.
 
 ```bash
 pnpm dev          # Dev server
@@ -285,4 +289,4 @@ pnpm test:e2e     # E2E tests
 
 ## Environment
 
-Declare environment variables in `src/env.ts` and keep `.env.example` aligned. Import values from `$app/env/private` or `$app/env/public`. SvelteKit reads them at runtime and validates URL and database settings with Valibot.
+Declare environment variables in `src/env.ts` and keep `.env.example` aligned. Import values from `$app/env/private` or `$app/env/public`. SvelteKit reads and validates these settings at runtime. Configure D1 as a Wrangler binding for each deployed environment.

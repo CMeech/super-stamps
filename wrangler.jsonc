@@ -8,6 +8,14 @@
     "binding": "ASSETS",
     "directory": ".svelte-kit/cloudflare"
   },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "superstamps-local",
+      "database_id": "00000000-0000-0000-0000-000000000000",
+      "migrations_dir": "src/lib/db/migrations"
+    }
+  ],
   "workers_dev": false,
   "preview_urls": false,
   "keep_vars": true,

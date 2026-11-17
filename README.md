@@ -2,6 +2,8 @@
 
 SuperStamps is a digital loyalty card application based on [SvelteKit Omakase](https://github.com/n00ki/sveltekit-omakase/tree/fedb890c5cea7663aae331c65241c56ee1f862c9). The starter was imported from commit `fedb890c5cea7663aae331c65241c56ee1f862c9`. SuperStamps is licensed under the [AGPL-3.0](LICENSE). The imported starter’s MIT notice is in [LICENSE-OMAKASE](LICENSE-OMAKASE).
 
+Cloudflare D1 is the selected application database for operational data and Better Auth. The D1 cutover is planned. The verification commands below exercise the current starter configuration during the transition. See the [technology stack](docs/TECH_STACK.md#4-cloudflare-edge-deployment--required-future-work).
+
 ## Verify in Docker
 
 From the project directory, build the image and run the type check and Cloudflare Worker build.
@@ -34,9 +36,11 @@ Run `bash scripts/smoke-worker.sh` locally or in CI to run the Vitest Worker sui
 
 Run `docker run --rm --env-file .env.example superstamps-starter pnpm test:unit --run` for the Node unit suite.
 
+See the [D1 migration guide](docs/d1-migrations.md) for migrating between sqlite compatible DB applications.
+
 ## Worker environments
 
-Wrangler targets separate Workers through `--env preview`, `--env staging`, and `--env production`. Give each Worker its own Turso database and token, Better Auth secret, and any OAuth, storage, or email resources it uses. Use the Worker’s dashboard settings for public values and each Worker’s own encrypted secrets for credentials. The variable names are listed in `src/env.ts`. Set `PUBLIC_BASE_URL` and `BETTER_AUTH_URL` to that environment’s origin. Production requires a Cloudflare route or custom domain.
+Wrangler targets separate Workers through `--env preview`, `--env staging`, and `--env production`. For D1 deployments, configure a separate D1 database binding for each deployed environment. The current Worker still uses a database URL and token until the D1 cutover. Give each Worker its own Better Auth secret and any OAuth, storage, or email resources it uses. Use the Worker’s dashboard settings for public values and each Worker’s own encrypted secrets for credentials. The variable names are listed in `src/env.ts`. Set `PUBLIC_BASE_URL` and `BETTER_AUTH_URL` to that environment’s origin. Production requires a Cloudflare route or custom domain.
 
 For MVP verification, run the built Worker locally in Docker. The hosted staging deployment is deferred until after the MVP. See the [technology stack](docs/TECH_STACK.md#4-cloudflare-edge-deployment--required-future-work) for the environment policy.
 
