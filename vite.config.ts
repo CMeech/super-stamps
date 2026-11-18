@@ -6,10 +6,7 @@ import tailwindcss from '@tailwindcss/vite';
 import { esmExternalRequirePlugin } from 'vite';
 import { defineConfig } from 'vitest/config';
 
-export default defineConfig(({ command }) => ({
-  resolve: {
-    alias: command === 'build' ? [{ find: /^@libsql\/client$/, replacement: '@libsql/client/http' }] : []
-  },
+export default defineConfig({
   environments: {
     ssr: {
       build: {
@@ -52,4 +49,4 @@ export default defineConfig(({ command }) => ({
       }
     ]
   }
-}));
+});

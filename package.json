@@ -18,13 +18,10 @@
     "test:unit": "vitest",
     "test:worker": "vitest run --config vitest.worker.config.ts",
     "test": "playwright test && vitest",
-    "db:push": "drizzle-kit push",
     "worker:types": "mkdir -p .wrangler && wrangler types .wrangler/worker-env.d.ts",
     "db:generate": "drizzle-kit generate --config drizzle-d1.config.ts",
     "db:migrate": "wrangler d1 migrations apply DB --local",
-    "db:drop": "drizzle-kit drop",
-    "db:clear": "wrangler d1 execute DB --local --command 'DELETE FROM user; DELETE FROM verification;'",
-    "db:studio": "drizzle-kit studio"
+    "db:clear": "wrangler d1 execute DB --local --command 'DELETE FROM user; DELETE FROM verification;'"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
@@ -41,7 +38,6 @@
     "@types/qrcode": "^1.5.6",
     "bits-ui": "2.19.5",
     "clsx": "^2.1.1",
-    "dotenv": "^18.0.8",
     "drizzle-kit": "^0.31.11",
     "eslint": "^10.12.0",
     "eslint-config-prettier": "^10.1.8",
@@ -77,7 +73,6 @@
     "@better-auth/utils": "0.5.0",
     "@better-svelte-email/components": "^2.3.0",
     "@better-svelte-email/server": "^2.3.0",
-    "@libsql/client": "^0.18.0",
     "better-auth": "^1.7.10",
     "drizzle-orm": "^0.45.4",
     "qrcode": "^1.5.4",

@@ -266,7 +266,11 @@ export const loginSchema = v.object({
 
 ## Database
 
-Cloudflare D1 is the selected database for operational and authentication data. Drizzle and Better Auth use the request-scoped Workers binding. The server database layer handles D1 initialization. Apply checked-in SQL migrations to local D1 before verification and to the target D1 database during deployment. See the [deployment guidance](TECH_STACK.md#4-cloudflare-edge-deployment--required-future-work).
+Cloudflare D1 is the selected database for operational and authentication data. Drizzle and Better Auth use the request-scoped Workers binding. The server database layer handles D1 initialization. Run `pnpm db:generate` after changing Drizzle models and review the generated SQL and metadata. Run `pnpm db:migrate` to apply checked-in migrations to the local `DB` binding. The built-Worker smoke suite applies the same migrations to a disposable D1 binding.
+
+Use the same named Docker volume at `/app/.wrangler/state` for Wrangler and local database commands. `pnpm db:clear` clears authentication data while retaining the schema and migration history. A full reset deletes the local volume and reapplies the migrations. See the [Docker commands](../README.md#run-the-built-worker-locally).
+
+Apply reviewed remote migrations as a controlled step before deploying the Worker. Use the same Wrangler environment for both commands and verify its `DB` binding points to the intended database. See the [D1 migration guide](d1-migrations.md).
 
 ## Commands
 

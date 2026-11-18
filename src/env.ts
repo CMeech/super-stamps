@@ -3,8 +3,6 @@ import * as v from 'valibot';
 
 export const variables = defineEnvVars({
   PUBLIC_BASE_URL: { public: true, schema: v.pipe(v.string(), v.url()) },
-  DATABASE_URL: { schema: v.pipe(v.string(), v.nonEmpty()) },
-  DATABASE_AUTH_TOKEN: { schema: v.optional(v.string()) },
   BETTER_AUTH_URL: { schema: v.pipe(v.string(), v.url()) },
   BETTER_AUTH_SECRET: {},
   GOOGLE_CLIENT_ID: {},

@@ -63,7 +63,7 @@ Omakase's existing password/Google login configuration does not itself enable ei
 
 Configure the SvelteKit Cloudflare adapter and Wrangler with pinned compatibility settings, environment bindings, secrets, deployment environments, and custom-domain routing. Audit dependencies for native modules, filesystem assumptions, Node-specific behavior, and request lifecycle restrictions. Enable Node compatibility only where required and verify functionality in the Workers runtime.
 
-Bind D1 to each deployed Worker environment and initialize Drizzle from the request-scoped binding. Use an isolated local D1 database for development and a disposable D1 database for the Workers test harness. Keep OAuth keys and storage credentials in server-only configuration. The runtime database URL and token are transitional configuration until the D1 cutover.
+Bind D1 to each deployed Worker environment and initialize Drizzle from the request-scoped binding. Use an isolated local D1 database for development and a disposable D1 database for the Workers test harness. Keep OAuth keys and storage credentials in server-only configuration.
 
 Cloudflare Workers is the production target. During the MVP, verify the built Worker locally in Docker using the Workers test harness and isolated test resources. Defer a hosted Cloudflare staging environment until after the MVP.
 

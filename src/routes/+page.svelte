@@ -78,13 +78,13 @@
           <span class="font-medium">Drizzle ORM</span>
         </a>
         <a
-          href="https://turso.tech/"
+          href="https://developers.cloudflare.com/d1/"
           target="_blank"
           rel="noopener noreferrer"
           class="group flex items-center gap-3 rounded-lg border border-border p-4 transition-colors hover:bg-muted hover:shadow-sm focus-visible:outline-primary"
         >
           <Zap size="18" class="text-muted-foreground group-hover:text-orange-400" />
-          <span class="font-medium">Turso</span>
+          <span class="font-medium">Cloudflare D1</span>
         </a>
         <a
           href="https://www.shadcn-svelte.com/"
