@@ -1,12 +1,19 @@
+import type { TwoFactor } from '#lib/db/models/index.ts';
+
 import { getRequestEvent } from '$app/server';
 
 import { createOTP } from '@better-auth/utils/otp';
+import { error } from '@sveltejs/kit';
+import {
+  confirmPendingTwoFactor,
+  deleteEnabledTwoFactor,
+  replacePendingTwoFactor,
+  replaceRecoveryCodes
+} from '#queries/two-factor.ts';
 import { APIError as BetterAuthAPIError } from 'better-auth/api';
 import { generateRandomString, symmetricDecrypt, symmetricEncrypt } from 'better-auth/crypto';
-import { eq } from 'drizzle-orm';
 import QRCode from 'qrcode';
 
-import { Session, TwoFactor, User } from '#lib/db/models/index.ts';
 import { getAuth } from '#lib/server/auth.ts';
 import getDatabase from '#lib/server/database.ts';
 import {
@@ -30,6 +37,10 @@ export type TwoFactorSetup = {
 };
 
 export type TwoFactorChallengeResult = 'completed' | 'exhausted' | 'expired' | 'failed' | 'invalid' | 'locked';
+
+function failTwoFactorWrite(): never {
+  error(500, 'Unable to update two-factor authentication.', { code: 'TWO_FACTOR_WRITE_FAILED' });
+}
 
 async function getSecretKey() {
   return (await getAuth().$context).secretConfig;
@@ -99,17 +110,12 @@ export async function startSetup(): Promise<TwoFactorSetup> {
     width: 256
   });
 
-  const db = getDatabase();
-  await db.batch([
-    db.delete(TwoFactor).where(eq(TwoFactor.userId, user.id)),
-    db.update(User).set({ twoFactorEnabled: false }).where(eq(User.id, user.id)),
-    db.insert(TwoFactor).values({
-      backupCodes,
-      secret: encryptedSecret,
-      userId: user.id,
-      verified: false
-    })
-  ]);
+  const inserted = await replacePendingTwoFactor(getDatabase(), user.id, encryptedSecret, backupCodes).catch(
+    failTwoFactorWrite
+  );
+  if (!inserted) {
+    error(409, 'Two-factor authentication setup changed. Reload security settings and try again.');
+  }
 
   return {
     manualSetupKey: new URL(totpURI).searchParams.get('secret') ?? '',
@@ -118,33 +124,18 @@ export async function startSetup(): Promise<TwoFactorSetup> {
 }
 
 export async function confirmSetup(code: string): Promise<boolean> {
-  const { session, twoFactor, user } = await requirePendingTwoFactorSetup();
+  const { session, twoFactor } = await requirePendingTwoFactorSetup();
 
   if (!(await verifyCode(twoFactor, code))) {
     return false;
   }
 
-  const now = new Date();
-
-  const db = getDatabase();
-  await db.batch([
-    db.update(TwoFactor).set({ verified: true }).where(eq(TwoFactor.id, twoFactor.id)),
-    db
-      .update(User)
-      .set({
-        twoFactorEnabled: true,
-        updatedAt: now
-      })
-      .where(eq(User.id, user.id)),
-    db
-      .update(Session)
-      .set({
-        challengeCompletedAt: now,
-        twoFactorCompletedAt: now,
-        updatedAt: now
-      })
-      .where(eq(Session.token, session.token))
-  ]);
+  const confirmed = await confirmPendingTwoFactor(getDatabase(), twoFactor, session.token, new Date()).catch(
+    failTwoFactorWrite
+  );
+  if (!confirmed) {
+    error(409, 'Two-factor authentication setup changed. Reload security settings and try again.');
+  }
 
   return true;
 }
@@ -197,28 +188,13 @@ export async function verifyRecoveryChallenge(code: string): Promise<TwoFactorCh
 }
 
 export async function disable() {
-  const { session, user } = await requireEnabledTwoFactor();
-
-  const now = new Date();
-
-  const db = getDatabase();
-  await db.batch([
-    db.delete(TwoFactor).where(eq(TwoFactor.userId, user.id)),
-    db
-      .update(User)
-      .set({
-        twoFactorEnabled: false,
-        updatedAt: now
-      })
-      .where(eq(User.id, user.id)),
-    db
-      .update(Session)
-      .set({
-        twoFactorCompletedAt: null,
-        updatedAt: now
-      })
-      .where(eq(Session.token, session.token))
-  ]);
+  const { session, twoFactor } = await requireEnabledTwoFactor();
+  const deleted = await deleteEnabledTwoFactor(getDatabase(), twoFactor, session.token, new Date()).catch(
+    failTwoFactorWrite
+  );
+  if (!deleted) {
+    error(409, 'Two-factor authentication enrollment changed. Reload security settings and try again.');
+  }
 }
 
 export async function getRecoveryCodes(): Promise<string[]> {
@@ -230,12 +206,11 @@ export async function regenerateRecoveryCodes(): Promise<string[]> {
   const { twoFactor } = await requireEnabledTwoFactor();
   const recoveryCodes = createRecoveryCodes();
 
-  await getDatabase()
-    .update(TwoFactor)
-    .set({
-      backupCodes: await encryptRecoveryCodes(recoveryCodes)
-    })
-    .where(eq(TwoFactor.id, twoFactor.id));
+  const backupCodes = await encryptRecoveryCodes(recoveryCodes);
+  const updated = await replaceRecoveryCodes(getDatabase(), twoFactor, backupCodes).catch(failTwoFactorWrite);
+  if (!updated) {
+    error(409, 'Recovery codes changed. Reload security settings and try again.');
+  }
 
   return recoveryCodes;
 }
