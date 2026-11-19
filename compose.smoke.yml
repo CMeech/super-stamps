@@ -5,3 +5,4 @@ services:
     command: ['pnpm', 'test:worker']
     environment:
       WRANGLER_SEND_METRICS: 'false'
+      WORKER_SMOKE_SUITE: ${WORKER_SMOKE_SUITE:-}
