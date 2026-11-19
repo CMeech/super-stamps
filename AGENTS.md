@@ -1,8 +1,15 @@
 # Super Stamps contributor guidance
 
 - Read [the tech stack](docs/TECH_STACK.md) and [the architecture guide](docs/architecture.md) before extending the application. The architecture guide describes the starter's conventions; Super Stamps' documented decisions take precedence if they conflict.
-- Target Cloudflare Workers for production code. Prefer Web APIs and Workers bindings; do not assume a full Node.js runtime. Node is allowed for local tooling and builds. Verify any required Node compatibility in the Workers runtime.
 - Use Docker for local development and verification to keep project dependencies in containers. Follow the [Docker verification workflow](README.md#verify-in-docker) for starter and dependency changes. The [tech stack](docs/TECH_STACK.md) describes the planned Docker Compose workflow for the Vite dev server.
+
+## Cloudflare Workers
+
+- **MUST** target Workers in production and verify Node dependencies there. Stream large bodies, bound memory, use Web Crypto for tokens, and handle expected failures explicitly. Await or return promises, or use `waitUntil()` for short noncritical work. Use Queues or Workflows for durable retries or long-running work.
+- **MUST** use Wrangler-managed secrets, enable structured Workers logs and traces under the PII rules below, and keep source maps out of public assets. Maintain the compatibility date and regenerate Wrangler types when bindings or compatibility settings change. Follow the SvelteKit adapter’s Worker entrypoint and asset directory. Test Worker behavior with the existing Cloudflare Vitest suite in Docker.
+- **SHOULD** prefer Web APIs and native bindings within the project architecture, which uses D1 bindings and R2 via S3. **MUST NOT** retain request state in module scope, hardcode or log credentials, or use `passThroughOnException()` for routine errors.
+
+[Cloudflare Workers best practices](https://developers.cloudflare.com/workers/best-practices/workers-best-practices/)
 
 ## Personally identifiable information (PII)
 
